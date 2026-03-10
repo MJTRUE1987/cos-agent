@@ -1,0 +1,227 @@
+{
+  "organization": {
+    "name": "Grace Community Church",
+    "motto": "Building community, one connection at a time",
+    "foundedYear": 2018
+  },
+  "members": [
+    {
+      "id": "m1",
+      "name": "Sarah Chen",
+      "email": "sarah@example.com",
+      "role": "Lead Pastor",
+      "joinedDate": "2018-03-15",
+      "groups": ["g1", "g3"],
+      "lastCheckIn": "2026-03-09"
+    },
+    {
+      "id": "m2",
+      "name": "Marcus Johnson",
+      "email": "marcus@example.com",
+      "role": "Youth Director",
+      "joinedDate": "2019-06-01",
+      "groups": ["g1"],
+      "lastCheckIn": "2026-03-09"
+    },
+    {
+      "id": "m3",
+      "name": "Elena Rodriguez",
+      "email": "elena@example.com",
+      "role": "Worship Leader",
+      "joinedDate": "2019-09-12",
+      "groups": ["g2", "g4"],
+      "lastCheckIn": "2026-03-08"
+    },
+    {
+      "id": "m4",
+      "name": "David Kim",
+      "email": "david@example.com",
+      "role": "Deacon",
+      "joinedDate": "2020-01-20",
+      "groups": ["g3"],
+      "lastCheckIn": "2026-03-09"
+    },
+    {
+      "id": "m5",
+      "name": "Aisha Williams",
+      "email": "aisha@example.com",
+      "role": "Children's Ministry",
+      "joinedDate": "2020-05-10",
+      "groups": ["g5"],
+      "lastCheckIn": "2026-03-07"
+    },
+    {
+      "id": "m6",
+      "name": "James O'Brien",
+      "email": "james@example.com",
+      "role": "Member",
+      "joinedDate": "2021-02-14",
+      "groups": ["g1", "g2"],
+      "lastCheckIn": "2026-03-09"
+    },
+    {
+      "id": "m7",
+      "name": "Priya Patel",
+      "email": "priya@example.com",
+      "role": "Member",
+      "joinedDate": "2022-08-30",
+      "groups": ["g4"],
+      "lastCheckIn": "2026-03-06"
+    },
+    {
+      "id": "m8",
+      "name": "Carlos Mendez",
+      "email": "carlos@example.com",
+      "role": "Outreach Coordinator",
+      "joinedDate": "2021-11-05",
+      "groups": ["g3", "g5"],
+      "lastCheckIn": "2026-03-09"
+    },
+    {
+      "id": "m9",
+      "name": "Rachel Foster",
+      "email": "rachel@example.com",
+      "role": "Member",
+      "joinedDate": "2023-04-18",
+      "groups": ["g2"],
+      "lastCheckIn": "2026-03-08"
+    },
+    {
+      "id": "m10",
+      "name": "Tom Bradley",
+      "email": "tom@example.com",
+      "role": "Member",
+      "joinedDate": "2025-12-01",
+      "groups": [],
+      "lastCheckIn": "2026-03-05"
+    }
+  ],
+  "events": [
+    {
+      "id": "e1",
+      "title": "Sunday Worship Service",
+      "date": "2026-03-15",
+      "time": "10:00 AM",
+      "location": "Main Sanctuary",
+      "expectedAttendance": 120,
+      "type": "worship"
+    },
+    {
+      "id": "e2",
+      "title": "Youth Group Night",
+      "date": "2026-03-13",
+      "time": "6:30 PM",
+      "location": "Fellowship Hall",
+      "expectedAttendance": 25,
+      "type": "fellowship"
+    },
+    {
+      "id": "e3",
+      "title": "Community Outreach Day",
+      "date": "2026-03-22",
+      "time": "9:00 AM",
+      "location": "Downtown Park",
+      "expectedAttendance": 45,
+      "type": "outreach"
+    },
+    {
+      "id": "e4",
+      "title": "Easter Planning Meeting",
+      "date": "2026-03-18",
+      "time": "7:00 PM",
+      "location": "Conference Room",
+      "expectedAttendance": 12,
+      "type": "admin"
+    },
+    {
+      "id": "e5",
+      "title": "Worship Night",
+      "date": "2026-03-28",
+      "time": "7:00 PM",
+      "location": "Main Sanctuary",
+      "expectedAttendance": 80,
+      "type": "worship"
+    },
+    {
+      "id": "e6",
+      "title": "New Members Lunch",
+      "date": "2026-03-16",
+      "time": "12:00 PM",
+      "location": "Fellowship Hall",
+      "expectedAttendance": 15,
+      "type": "fellowship"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g1",
+      "name": "Young Adults",
+      "leaderId": "m2",
+      "memberCount": 18,
+      "meetingDay": "Wednesday",
+      "meetingTime": "7:00 PM",
+      "category": "fellowship"
+    },
+    {
+      "id": "g2",
+      "name": "Worship Team",
+      "leaderId": "m3",
+      "memberCount": 12,
+      "meetingDay": "Thursday",
+      "meetingTime": "6:30 PM",
+      "category": "ministry"
+    },
+    {
+      "id": "g3",
+      "name": "Men's Bible Study",
+      "leaderId": "m4",
+      "memberCount": 10,
+      "meetingDay": "Tuesday",
+      "meetingTime": "6:00 AM",
+      "category": "study"
+    },
+    {
+      "id": "g4",
+      "name": "Women's Prayer Group",
+      "leaderId": "m7",
+      "memberCount": 14,
+      "meetingDay": "Monday",
+      "meetingTime": "10:00 AM",
+      "category": "prayer"
+    },
+    {
+      "id": "g5",
+      "name": "Community Outreach",
+      "leaderId": "m8",
+      "memberCount": 22,
+      "meetingDay": "Saturday",
+      "meetingTime": "9:00 AM",
+      "category": "outreach"
+    }
+  ],
+  "checkins": [
+    { "id": "c1", "memberId": "m1", "date": "2026-03-09", "type": "attendance", "eventId": "e1", "note": "Great sermon series" },
+    { "id": "c2", "memberId": "m2", "date": "2026-03-09", "type": "attendance", "eventId": "e1", "note": "" },
+    { "id": "c3", "memberId": "m6", "date": "2026-03-09", "type": "attendance", "eventId": "e1", "note": "Brought a friend!" },
+    { "id": "c4", "memberId": "m4", "date": "2026-03-09", "type": "prayer", "eventId": null, "note": "Praying for job transition" },
+    { "id": "c5", "memberId": "m8", "date": "2026-03-09", "type": "volunteer", "eventId": "e3", "note": "Signed up for outreach" },
+    { "id": "c6", "memberId": "m3", "date": "2026-03-08", "type": "attendance", "eventId": "e1", "note": "" },
+    { "id": "c7", "memberId": "m9", "date": "2026-03-08", "type": "attendance", "eventId": "e1", "note": "First time visiting" },
+    { "id": "c8", "memberId": "m5", "date": "2026-03-07", "type": "volunteer", "eventId": null, "note": "Organized kids craft supplies" },
+    { "id": "c9", "memberId": "m7", "date": "2026-03-06", "type": "prayer", "eventId": null, "note": "Thankful for healing" },
+    { "id": "c10", "memberId": "m10", "date": "2026-03-05", "type": "attendance", "eventId": "e1", "note": "Looking to join a group" },
+    { "id": "c11", "memberId": "m1", "date": "2026-03-02", "type": "attendance", "eventId": "e1", "note": "" },
+    { "id": "c12", "memberId": "m6", "date": "2026-03-02", "type": "volunteer", "eventId": "e3", "note": "Helped with food drive" }
+  ],
+  "metrics": {
+    "weeklyAttendance": [95, 102, 88, 110, 105, 120, 115],
+    "weekLabels": ["Feb 2", "Feb 9", "Feb 16", "Feb 23", "Mar 2", "Mar 9", "Mar 16"],
+    "totalMembers": 10,
+    "newMembersThisMonth": 3,
+    "activeGroups": 5,
+    "upcomingEvents": 6,
+    "engagementRate": 0.72,
+    "prayerRequests": 14,
+    "volunteerHours": 86
+  }
+}

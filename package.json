@@ -1,0 +1,12 @@
+{
+  "name": "cos-agent",
+  "version": "0.1.0",
+  "description": "Prescient COS — Community Operating System dashboard",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "npx serve public"
+  }
+}

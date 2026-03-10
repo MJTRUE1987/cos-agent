@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prescient COS — Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1><span>Prescient</span> COS</h1>
+      <p id="org-motto">Community Operating System</p>
+    </div>
+    <p id="org-name"></p>
+  </header>
+
+  <div class="dashboard">
+    <div id="metrics" class="metrics-grid">
+      <div class="loading">Loading metrics...</div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2>Weekly Attendance</h2>
+        <div id="chart" class="chart-container">
+          <div class="loading">Loading chart...</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Recent Activity</h2>
+        <div id="checkins">
+          <div class="loading">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem">
+      <h2>Upcoming Events</h2>
+      <div id="events">
+        <div class="loading">Loading events...</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Small Groups</h2>
+    <div id="groups" class="groups-grid">
+      <div class="loading">Loading groups...</div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
