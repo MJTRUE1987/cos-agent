@@ -2357,17 +2357,27 @@ function handleLocalCommand(text) {
   if (t.match(/\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/)) {
     if (sel) { showCrmWizard(sel); return true; }
   }
-  // Post-call pipeline / Granola notes
+  // Post-call pipeline / Granola notes — supports chained commands
+  // e.g. "Pull my call notes from Ariat today. Draft up a quote and update HubSpot."
   if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief|pull.*(notes|call|recording)|notes from)\b/)) {
     const textMatch = findCompanyInText(t);
-    const target = textMatch || sel; // prefer explicit company mention over current selection
+    const target = textMatch || sel;
     if (target) {
       selectItem(target.id);
+      // Detect chained actions in the same message
+      const wantsQuote = t.match(/\b(quote|proposal|order form|contract|pricing)\b/);
+      const wantsCrm = t.match(/\b(hubspot|crm|update hubspot|log|update crm)\b/);
+      const wantsDraft = t.match(/\b(draft|email|follow.?up|write|send|reply)\b/) && !wantsQuote;
+      if (wantsQuote || wantsCrm || wantsDraft) {
+        // Run chained post-call pipeline in chat (no modal)
+        runChainedPostCall(target, { quote: !!wantsQuote, crm: !!wantsCrm, draft: !!wantsDraft });
+        return true;
+      }
       showPostCallFlow(target);
       return true;
     }
     // No company match — search Granola directly by keyword
-    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please)\b/g, '').trim();
+    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please|today)\b/g, '').trim();
     if (keyword) {
       fetchGranolaBySearch(keyword);
       return true;
@@ -2465,6 +2475,135 @@ async function fetchGranolaBySearch(keyword) {
   const c = document.getElementById("chatMessages");
   c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
   c.scrollTop = c.scrollHeight;
+}
+
+async function runChainedPostCall(item, opts = {}) {
+  const { quote, crm, draft } = opts;
+  const steps = ['Fetching call notes'];
+  if (quote) steps.push('generating proposal');
+  if (draft) steps.push('drafting email');
+  if (crm) steps.push('updating HubSpot');
+
+  addChat("agent", `<strong>${item.company}</strong> — ${steps.join(', ')}...`);
+
+  // Step 1: Fetch Granola notes
+  let granolaNote = null;
+  let analysis = null;
+  try {
+    const res = await fetch('/api/granola', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: item.company, analyze: true }),
+    });
+    const data = await res.json();
+    if (data.success && data.note) {
+      granolaNote = data.note;
+      analysis = data.note.analysis;
+      const summary = granolaNote.summaryText || granolaNote.summaryMarkdown || '';
+      const attendees = (granolaNote.attendees || []).map(a => a.name || a.email).join(', ');
+      let html = `<div style="margin-bottom:6px;"><strong>Call Notes — ${granolaNote.title || item.company}</strong></div>`;
+      html += `<div style="font-size:11px;color:#64748b;margin-bottom:6px;">${attendees}</div>`;
+      if (summary) {
+        html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.6;color:#94a3b8;max-height:200px;overflow-y:auto;">${summary.substring(0, 1500)}</div>`;
+      }
+      if (analysis?.summary) {
+        html += `<div style="margin-top:8px;font-size:12px;color:#a855f7;"><strong>AI:</strong> ${analysis.summary}</div>`;
+        if (analysis.nextSteps?.length) {
+          html += `<div style="font-size:11px;color:#64748b;margin-top:4px;">Next steps: ${analysis.nextSteps.join(' · ')}</div>`;
+        }
+      }
+      addChat("agent", html);
+    } else {
+      addChat("agent", `<span style="color:#f59e0b;">Granola notes not found for ${item.company}. Continuing with available context.</span>`);
+    }
+  } catch {
+    addChat("agent", `<span style="color:#f59e0b;">Could not reach Granola. Continuing with available context.</span>`);
+  }
+
+  // Step 2: Generate proposal/quote if requested
+  if (quote) {
+    addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Generating proposal for ${item.company}...</div>`);
+    const quoteIdx = chatHistory.length - 1;
+    try {
+      const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+      const notesContext = granolaNote?.summaryText || analysis?.summary || item.task || '';
+      const res = await fetch('/api/proposal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: item.company,
+          contactName: (granolaNote?.attendees || []).find(a => !(a.email || '').includes('prescient'))?.name || '',
+          contactEmail: (granolaNote?.attendees || []).find(a => !(a.email || '').includes('prescient'))?.email || '',
+          dealStage: deal?.stage || analysis?.suggestedDealStage || '',
+          notes: notesContext.substring(0, 2000),
+          slackChannel: 'commercial-dealdesk-agent',
+        }),
+      });
+      const data = await res.json();
+      const posted = data.slack?.posted;
+      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      chatHistory[quoteIdx] = { role: 'agent', text: `<span style="color:#10b981;font-weight:600;">&#10003; Proposal generated</span> — ${item.company}${posted ? ' (posted to #dealdesk)' : ''}`, ts };
+    } catch (err) {
+      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      chatHistory[quoteIdx] = { role: 'agent', text: `<span style="color:#ef4444;">Proposal failed: ${err.message}</span>`, ts };
+    }
+    const c = document.getElementById("chatMessages");
+    c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+    c.scrollTop = c.scrollHeight;
+  }
+
+  // Step 3: Draft email if requested
+  if (draft) {
+    showDraftModal(item, {
+      granolaBody: granolaNote?.summaryText || '',
+      callAnalysis: analysis,
+    });
+  }
+
+  // Step 4: Update HubSpot if requested
+  if (crm) {
+    addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Updating HubSpot for ${item.company}...</div>`);
+    const crmIdx = chatHistory.length - 1;
+    try {
+      const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+      const suggestedStage = analysis?.suggestedDealStage || null;
+      if (deal && suggestedStage) {
+        await crmDoUpdateStage(deal.id, suggestedStage, item.company, suggestedStage);
+      } else if (deal) {
+        // Log a note instead of changing stage
+        await fetch('/api/crm-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_note',
+            dealId: deal.id,
+            body: `Post-call update: ${analysis?.summary || item.task || 'Call completed'}`,
+          }),
+        });
+        const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+        chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#10b981;font-weight:600;">&#10003; HubSpot updated</span> — note logged for ${item.company}`, ts };
+        const c = document.getElementById("chatMessages");
+        c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+        c.scrollTop = c.scrollHeight;
+      } else {
+        const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+        chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#f59e0b;">No HubSpot deal found for ${item.company}. Use CRM button to create one.</span>`, ts };
+        const c = document.getElementById("chatMessages");
+        c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+        c.scrollTop = c.scrollHeight;
+      }
+    } catch (err) {
+      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+      chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#ef4444;">CRM update failed: ${err.message}</span>`, ts };
+      const c = document.getElementById("chatMessages");
+      c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+      c.scrollTop = c.scrollHeight;
+    }
+  }
+
+  // Final summary
+  addChat("agent", `<strong>&#10003; ${item.company} pipeline complete.</strong> ${[quote && 'Proposal', draft && 'Email', crm && 'CRM'].filter(Boolean).join(' + ')} done.`);
+  renderContextBar();
 }
 
 function copyToClipboard(text) {

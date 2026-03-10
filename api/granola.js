@@ -100,6 +100,12 @@ export default async function handler(req, res) {
               (n.attendees || []).some(a =>
                 (a.name || '').toLowerCase().includes(q) ||
                 (a.email || '').toLowerCase().includes(q)
+              ) ||
+              // Also check calendar event title and attendees
+              (n.calendar_event?.title || '').toLowerCase().includes(q) ||
+              (n.calendar_event?.attendees || []).some(a =>
+                (a.name || '').toLowerCase().includes(q) ||
+                (a.email || '').toLowerCase().includes(q)
               )
             );
           }
@@ -119,7 +125,7 @@ export default async function handler(req, res) {
       }
 
       if (!note) {
-        return res.status(404).json({ error: 'Note not found' });
+        return res.status(404).json({ error: 'Note not found', debug: { searchedCompany: company || null, hadId: !!id } });
       }
 
       // Build structured response
