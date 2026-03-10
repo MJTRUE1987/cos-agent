@@ -11,7 +11,10 @@
     { "source": "/api/calendar", "destination": "/api/calendar.js" },
     { "source": "/api/post-call", "destination": "/api/post-call.js" },
     { "source": "/api/slack", "destination": "/api/slack.js" },
-    { "source": "/api/granola", "destination": "/api/granola.js" }
+    { "source": "/api/granola", "destination": "/api/granola.js" },
+    { "source": "/api/intelligence", "destination": "/api/intelligence.js" },
+    { "source": "/api/briefing", "destination": "/api/briefing.js" },
+    { "source": "/api/sync", "destination": "/api/sync.js" }
   ],
   "headers": [
     {

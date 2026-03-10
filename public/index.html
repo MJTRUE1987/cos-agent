@@ -297,6 +297,10 @@
     <div class="nav-item" onclick="showTab('leads')"><div class="dot" style="background:#a855f7;"></div> All Leads <span class="count" id="navLeadsCount"></span></div>
     <div class="spacer"></div>
     <div id="sidebarOverdue" style="margin-bottom:12px;"></div>
+    <div style="margin-bottom:10px;">
+      <div id="syncIndicator" style="font-size:10px;margin-bottom:4px;"></div>
+      <button onclick="syncInBackground()" style="font-size:10px;padding:4px 10px;border-radius:4px;background:transparent;border:1px solid #1e293b;color:#64748b;cursor:pointer;width:100%;">Sync Now</button>
+    </div>
     <div class="user"><strong>Mike True</strong>Co-founder &amp; CEO</div>
   </div>
   <div class="center" id="main"><div style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⚡</div><div style="font-size:14px;color:#64748b;">Loading dashboard...</div></div></div></div>
@@ -420,6 +424,332 @@ let leadsSearch = "";
 let leadsFilter = "all"; // all | open | done | inbound | sales
 let leadsSearchCursor = 0;
 
+// Feature caches
+let _briefingCache = null;
+let _intelligenceCache = null;
+let _lastSyncedAt = localStorage.getItem('lastSyncedAt') || null;
+let quickMode = false;
+
+// ═══════════════════════════════════════
+// LIVE DATA SYNC (Feature 3)
+// ═══════════════════════════════════════
+async function syncInBackground() {
+  const indicator = document.getElementById("syncIndicator");
+  if (indicator) indicator.innerHTML = '<span style="color:#f59e0b;">Syncing...</span>';
+
+  try {
+    const res = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lastSyncedAt: _lastSyncedAt }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Sync failed');
+
+    // Merge new data into globals
+    if (data.newActions?.length) {
+      const existingIds = new Set(ACTIONS.map(a => a.id));
+      const deduped = data.newActions.filter(a => !existingIds.has(a.id));
+      // Also deduplicate by company name for recently added
+      const existingCompanies = new Set(ACTIONS.filter(a => a.status === 'open').map(a => a.company.toLowerCase()));
+      const truly = deduped.filter(a => !existingCompanies.has(a.company.toLowerCase()));
+      ACTIONS.push(...truly);
+    }
+    if (data.updatedPipeline?.length) {
+      const pipeMap = new Map(PIPELINE.map(d => [String(d.id), d]));
+      data.updatedPipeline.forEach(d => {
+        if (pipeMap.has(String(d.id))) {
+          Object.assign(pipeMap.get(String(d.id)), d);
+        } else {
+          PIPELINE.push(d);
+        }
+      });
+    }
+    if (data.newMeetings?.length) {
+      const existingTitles = new Set(MEETINGS.map(m => m.title.toLowerCase()));
+      const newMtgs = data.newMeetings.filter(m => !existingTitles.has(m.title.toLowerCase()));
+      MEETINGS.push(...newMtgs);
+    }
+
+    // Store sync time
+    _lastSyncedAt = data.syncedAt;
+    localStorage.setItem('lastSyncedAt', _lastSyncedAt);
+
+    // Clear caches so they regenerate with fresh data
+    _briefingCache = null;
+    _intelligenceCache = null;
+
+    // Update UI
+    renderCurrentTab();
+    updateSyncIndicator();
+
+    const total = (data.summary?.emailsProcessed || 0) + (data.summary?.dealsUpdated || 0) + (data.summary?.meetingsFound || 0);
+    if (total > 0) {
+      showToast(`Synced: ${data.summary.emailsProcessed} emails, ${data.summary.dealsUpdated} deals, ${data.summary.meetingsFound} meetings`);
+    }
+  } catch (err) {
+    console.error('Sync error:', err);
+    if (indicator) indicator.innerHTML = '<span style="color:#ef4444;">Sync failed</span>';
+  }
+}
+
+function updateSyncIndicator() {
+  const indicator = document.getElementById("syncIndicator");
+  if (!indicator) return;
+  if (_lastSyncedAt) {
+    const mins = Math.floor((Date.now() - new Date(_lastSyncedAt).getTime()) / 60000);
+    const label = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins/60)}h ago`;
+    indicator.innerHTML = `<span style="color:#64748b;">Synced ${label}</span>`;
+  } else {
+    indicator.innerHTML = '<span style="color:#475569;">Not synced</span>';
+  }
+}
+
+// ═══════════════════════════════════════
+// AI DAILY BRIEFING (Feature 2)
+// ═══════════════════════════════════════
+async function startMyDay() {
+  if (_briefingCache) {
+    renderBriefing(_briefingCache);
+    return;
+  }
+
+  addChat("agent", '<div class="modal-loading" style="padding:0;"><div class="spin"></div>Building your daily briefing...</div>');
+
+  // Fetch intelligence in parallel with briefing
+  let intelligence = _intelligenceCache;
+  if (!intelligence) {
+    try {
+      const intRes = await fetch('/api/intelligence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
+      });
+      const intData = await intRes.json();
+      if (intData.success) {
+        intelligence = intData.intelligence;
+        _intelligenceCache = intelligence;
+      }
+    } catch {}
+  }
+
+  try {
+    const res = await fetch('/api/briefing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actions: ACTIONS,
+        meetings: MEETINGS,
+        pipeline: PIPELINE,
+        calendarEvents: CALENDAR_EVENTS,
+        dealIntelligence: intelligence,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Briefing failed');
+
+    _briefingCache = data.briefing;
+    // Replace the loading message
+    chatHistory.pop();
+    renderBriefing(data.briefing);
+  } catch (err) {
+    chatHistory.pop();
+    addChat("agent", `<span style="color:#ef4444;">Briefing failed: ${err.message}</span><br>Falling back to first item.`);
+    const open = getOpen();
+    if (open.length) selectItem(open[0].id);
+  }
+}
+
+function renderBriefing(b) {
+  const urgColors = { critical: '#ef4444', high: '#f59e0b', medium: '#60a5fa' };
+
+  let html = `<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;">Your Daily Briefing</div>`;
+  html += `<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">${b.summary || ''}</div>`;
+
+  // Priorities
+  if (b.priorities?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Top Priorities</div>`;
+    b.priorities.forEach(p => {
+      const color = urgColors[p.urgency] || '#64748b';
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;cursor:pointer;" onclick="selectItem(${p.actionId})">
+        <span style="font-size:16px;font-weight:800;color:${color};min-width:20px;">${p.rank}</span>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#fff;">${p.company} <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${color}20;color:${color};margin-left:4px;">${p.urgency}</span></div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.4;">${p.reason}</div>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Quick wins
+  if (b.quickWins?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;margin:10px 0 4px;">Quick Wins</div>`;
+    b.quickWins.forEach(w => {
+      html += `<div style="font-size:11px;color:#6ee7b7;margin-bottom:3px;">&#8226; ${w}</div>`;
+    });
+  }
+
+  // Risks
+  if (b.risks?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#ef4444;text-transform:uppercase;margin:10px 0 4px;">Risks</div>`;
+    b.risks.forEach(r => {
+      html += `<div style="font-size:11px;color:#fca5a5;margin-bottom:3px;">&#9888; ${r.company || ''}: ${r.detail}</div>`;
+    });
+  }
+
+  // Today's meetings
+  if (b.todaysMeetings?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;margin:10px 0 4px;">Today's Meetings</div>`;
+    b.todaysMeetings.forEach(m => {
+      html += `<div style="font-size:11px;color:#fcd34d;margin-bottom:3px;">&#128197; ${m.time || ''} — ${m.title} <span style="color:#94a3b8;">${m.prepSuggestion || ''}</span></div>`;
+    });
+  }
+
+  html += `<div style="display:flex;gap:6px;margin-top:12px;">
+    <div class="quick-chip" style="border-color:#10b981;color:#10b981;" onclick="acceptTriageOrder()">Accept triage order</div>
+  </div>`;
+
+  addChat("agent", html);
+
+  // Auto-select top priority
+  if (b.priorities?.length && b.priorities[0].actionId) {
+    selectedId = b.priorities[0].actionId;
+    renderContextBar();
+    renderCurrentTab();
+  }
+}
+
+function acceptTriageOrder() {
+  if (!_briefingCache?.triageOrder?.length) return;
+  const orderMap = new Map(_briefingCache.triageOrder.map((id, i) => [id, i]));
+  ACTIONS.sort((a, b) => {
+    const ai = orderMap.has(a.id) ? orderMap.get(a.id) : 9999;
+    const bi = orderMap.has(b.id) ? orderMap.get(b.id) : 9999;
+    return ai - bi;
+  });
+  renderCurrentTab();
+  showToast('Triage order applied');
+}
+
+// ═══════════════════════════════════════
+// DEAL INTELLIGENCE (Feature 1)
+// ═══════════════════════════════════════
+async function loadIntelligence() {
+  if (_intelligenceCache) return _intelligenceCache;
+  try {
+    const res = await fetch('/api/intelligence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      _intelligenceCache = data.intelligence;
+      return _intelligenceCache;
+    }
+  } catch {}
+  return null;
+}
+
+// ═══════════════════════════════════════
+// QUICK MODE POST-CALL (Feature 4)
+// ═══════════════════════════════════════
+async function runQuickPostCall(item) {
+  if (!item) return;
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+
+  // Step 0: Fetch Granola
+  addChat("agent", `<strong>${item.company}</strong> — Quick Post-Call<br><span style="color:#f59e0b;">Fetching Granola notes...</span>`);
+
+  let granolaNotes = '', granolaUrl = '', contactName = '', contactEmail = '';
+
+  try {
+    const grRes = await fetch('/api/granola', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: item.company, analyze: true }),
+    });
+    const grData = await grRes.json();
+    if (grData.success && grData.note) {
+      const note = grData.note;
+      granolaNotes = note.summaryMarkdown || note.summaryText || note.fullTranscriptText || '';
+      granolaUrl = item.granola || '';
+      const ext = (note.attendees || []).filter(a => a.email && !a.email.includes('prescient'));
+      contactName = ext[0]?.name || '';
+      contactEmail = ext[0]?.email || '';
+      addChat("agent", `<span style="color:#10b981;">Found: ${note.title || item.company}</span>`);
+    } else {
+      addChat("agent", `<span style="color:#f59e0b;">No Granola notes found. Using existing context.</span>`);
+      granolaNotes = item.task || '';
+    }
+  } catch {
+    addChat("agent", `<span style="color:#f59e0b;">Granola unavailable. Using existing context.</span>`);
+    granolaNotes = item.task || '';
+  }
+
+  // Step 1: Run full pipeline
+  addChat("agent", `<span style="color:#60a5fa;">Running pipeline: Analyze → Proposal → Email → CRM...</span>`);
+
+  try {
+    const res = await fetch('/api/post-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'all',
+        company: item.company,
+        contactName,
+        contactEmail,
+        granolaNotes,
+        granolaUrl,
+        hubspotDealId: deal?.id,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Pipeline failed');
+
+    // Report results
+    let results = [];
+    if (data.analysis) results.push(`<span style="color:#10b981;">&#10003; Call analyzed</span> — ${(data.analysis.summary || '').substring(0, 80)}`);
+    if (data.proposal?.slackPosted) results.push(`<span style="color:#10b981;">&#10003; Proposal posted to #dealdesk</span>`);
+    else if (data.proposal?.orderForm) results.push(`<span style="color:#f59e0b;">&#10003; Proposal generated (Slack not configured)</span>`);
+    if (data.email?.body) results.push(`<span style="color:#10b981;">&#10003; Email drafted</span> — <a href="https://mail.google.com/mail/u/0/#drafts" target="_blank">Open Gmail</a>`);
+    if (data.crm?.noteCreated) results.push(`<span style="color:#10b981;">&#10003; HubSpot updated</span>${data.crm.suggestedStage ? ` (suggest → ${data.crm.suggestedStage})` : ''}`);
+
+    // LinkedIn — add as clickable link (avoid popup blockers)
+    let liHtml = '';
+    if (contactName) {
+      try {
+        const liRes = await fetch('/api/linkedin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contactName, company: item.company, context: data.analysis?.summary || item.task }),
+        });
+        const liData = await liRes.json();
+        if (liData.profileUrl) {
+          liHtml = `<span style="color:#60a5fa;">&#10003; LinkedIn ready</span> — <a href="${liData.profileUrl}" target="_blank">Connect with ${contactName}</a>`;
+          results.push(liHtml);
+        }
+      } catch {}
+    }
+
+    addChat("agent", `<div style="font-size:14px;font-weight:700;color:#10b981;margin-bottom:8px;">&#10003; Quick Post-Call Complete — ${item.company}</div>${results.map(r => `<div style="font-size:12px;margin-bottom:4px;">${r}</div>`).join('')}`);
+
+    // Clear briefing cache since pipeline changed
+    _briefingCache = null;
+    _intelligenceCache = null;
+
+    // Update local pipeline if CRM suggested a stage
+    if (data.crm?.suggestedStage && deal) {
+      deal.stage = data.crm.suggestedStage;
+      renderCurrentTab();
+    }
+
+    showToast(`Quick Post-Call done — ${item.company}`);
+  } catch (err) {
+    addChat("agent", `<span style="color:#ef4444;">Quick Post-Call failed: ${err.message}</span>`);
+  }
+}
+
 function getOpen() { return ACTIONS.filter(a => a.status === "open"); }
 function getDone() { return ACTIONS.filter(a => a.status === "done"); }
 function getArchived() { return ACTIONS.filter(a => a.status === "archived"); }
@@ -490,6 +820,7 @@ function markDone(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "done"; a.color = "tg";
+  _briefingCache = null;
   updateProgressBadge();
   addChat("agent", `<span style="color:#10b981;font-weight:600;">✓ ${a.company} — done.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
@@ -510,6 +841,7 @@ function archiveItem(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "archived";
+  _briefingCache = null;
   updateProgressBadge();
   addChat("agent", `<span style="color:#64748b;">✕ ${a.company} — archived.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
@@ -524,7 +856,13 @@ function renderContextBar() {
   if (sel && sel.status === "open") {
     const dv = sel.dealValue ? ` <span class="deal-val">${fmtMoney(sel.dealValue)}</span>` : "";
     area.innerHTML = `<div class="context-bar">
-      <div class="ctx-selected-label">Selected</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div class="ctx-selected-label" style="margin:0;">Selected</div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:${quickMode?'#f59e0b':'#475569'};cursor:pointer;">
+          <span>Quick Mode</span>
+          <input type="checkbox" ${quickMode?'checked':''} onchange="quickMode=this.checked;renderContextBar()" style="accent-color:#f59e0b;">
+        </label>
+      </div>
       <div class="ctx-company-row">
         <div class="ctx-company-name">${sel.company}${dv}</div>
       </div>
@@ -553,7 +891,7 @@ function renderContextBar() {
 function startWork() {
   const open = getOpen();
   if (open.length === 0) { addChat("agent", "No open items!"); return; }
-  selectItem(open[0].id);
+  startMyDay();
 }
 
 // ═══════════════════════════════════════
@@ -726,6 +1064,7 @@ async function createGmailDraft(itemId, alsoCrm) {
 // ═══════════════════════════════════════
 async function showPostCallFlow(item) {
   if (!item) { addChat("agent", "Select a meeting/item first."); return; }
+  if (quickMode) { runQuickPostCall(item); return; }
   const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
   const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
 
@@ -1295,6 +1634,7 @@ async function crmDoUpdateStage(dealId, stageIdOrName, company, stageName) {
     addChat("agent", `<strong>&#10003; HubSpot updated</strong> — ${company} → ${stageName || stageId}`);
 
     // Update local pipeline data
+    _intelligenceCache = null;
     const deal = PIPELINE.find(d => String(d.id) === String(dealId));
     if (deal) { deal.stage = stageName || stageId; renderCurrentTab(); }
   } catch (err) {
@@ -2205,7 +2545,16 @@ function renderPipelineView(main) {
   const committedVal = committed.reduce((s,d) => s + (d.amount || 0), 0);
 
   let html = `<h1>Pipeline — Brand</h1>`;
-  html += `<div class="subtitle">${active.length} active deals · ${fmtMoney(total)} total · ${fmtMoney(committedVal)} committed (${committed.length})</div>`;
+  html += `<div class="subtitle">${active.length} active deals · ${fmtMoney(total)} total · ${fmtMoney(committedVal)} committed (${committed.length})`;
+  if (_intelligenceCache?.pipelineHealth?.score != null) {
+    const score = _intelligenceCache.pipelineHealth.score;
+    const scoreColor = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444';
+    html += ` · <span style="color:${scoreColor};font-weight:600;">Health: ${score}/100</span>`;
+  }
+  html += `</div>`;
+
+  // Intelligence alerts
+  html += `<div id="intelligenceAlerts"></div>`;
 
   html += `<table class="pipe-table"><thead><tr><th>Deal</th><th>Value</th><th>Stage</th><th>Owner</th><th>Close</th></tr></thead><tbody>`;
   sorted.forEach(d => {
@@ -2241,6 +2590,45 @@ function renderPipelineView(main) {
   }
 
   main.innerHTML = html;
+
+  // Load intelligence data and render alerts
+  loadIntelligence().then(intel => {
+    if (intel) renderIntelligenceAlerts(intel);
+  });
+}
+
+function renderIntelligenceAlerts(intel) {
+  const container = document.getElementById('intelligenceAlerts');
+  if (!container || !intel) return;
+
+  const alerts = intel.alerts || [];
+  if (alerts.length === 0) { container.innerHTML = ''; return; }
+
+  const sevColors = { high: '#ef4444', medium: '#f59e0b', low: '#3b82f6' };
+  const sevBg = { high: 'rgba(239,68,68,0.08)', medium: 'rgba(245,158,11,0.08)', low: 'rgba(59,130,246,0.08)' };
+  const sevLabels = { high: 'HIGH', medium: 'MED', low: 'LOW' };
+
+  let html = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 16px;">';
+  alerts.slice(0, 6).forEach(a => {
+    const color = sevColors[a.severity] || sevColors.low;
+    const bg = sevBg[a.severity] || sevBg.low;
+    const label = sevLabels[a.severity] || 'INFO';
+    const clickAction = a.dealId ? `onclick="selectItem(${a.dealId});showTab('today')"` : '';
+    html += `<div ${clickAction} style="background:${bg};border:1px solid ${color}33;border-radius:8px;padding:8px 12px;flex:1 1 calc(50% - 4px);min-width:260px;cursor:${a.dealId ? 'pointer' : 'default'};">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        <span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;">${label}</span>
+        <span style="color:${color};font-weight:600;font-size:13px;">${a.company || a.type}</span>
+      </div>
+      <div style="color:#94a3b8;font-size:12px;line-height:1.4;">${a.recommendation}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  if (intel.summary) {
+    html += `<div style="color:#94a3b8;font-size:12px;font-style:italic;margin-bottom:8px;">${intel.summary}</div>`;
+  }
+
+  container.innerHTML = html;
 }
 
 // ───────────────────────────────────────
@@ -2406,7 +2794,9 @@ function toggleDropdown(btn) {
 document.addEventListener("DOMContentLoaded", async () => {
   // Load data from API first
   await loadData();
-  
+  updateSyncIndicator();
+  syncInBackground(); // Non-blocking background sync
+
   const input = document.getElementById("chatInput");
   input.addEventListener("input", () => { input.style.height = "40px"; input.style.height = Math.min(input.scrollHeight,120)+"px"; });
   input.addEventListener("keydown", e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
