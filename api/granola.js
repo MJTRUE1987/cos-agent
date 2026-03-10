@@ -64,8 +64,8 @@ export default async function handler(req, res) {
       // The URL UUID won't match the API ID format, so we need to search by date/title
     }
 
-    if (!id && !granolaUrl) {
-      return res.status(400).json({ error: 'noteId or granolaUrl required' });
+    if (!id && !granolaUrl && !company) {
+      return res.status(400).json({ error: 'noteId or granolaUrl or company required' });
     }
 
     try {
