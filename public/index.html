@@ -1459,11 +1459,11 @@ function renderActionChips(item, extraContext = {}) {
   return `<div class="action-chips">${chips.join('')}</div>`;
 }
 
-function showCrmEditor(item, analysis) {
+function showCrmEditor(item, analysis, opts = {}) {
   if (!item) { addChat("agent", "Select an item first."); return; }
   const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
   const stages = ["Disco Booked","Disco Complete","Demo Scheduled","Demo Completed","Negotiating","Committed","Closed Won","Closed Lost"];
-  const currentStage = deal ? (STAGE_MAP[deal.dealstage] || deal.stage || '') : (analysis?.suggestedDealStage || '');
+  const currentStage = opts.presetStage || (deal ? (STAGE_MAP[deal.dealstage] || deal.stage || '') : (analysis?.suggestedDealStage || ''));
   const dealValue = analysis?.dealValueEstimate || (deal ? deal.amount || '' : item.dealValue || '');
   const closeDate = deal?.close || new Date(Date.now() + 90*86400000).toISOString().split('T')[0];
   const noteText = (analysis ? (analysis.summary || '') + (analysis.nextSteps?.length ? '\n\nNext Steps:\n' + analysis.nextSteps.join('\n') : '') : item.task || '');
@@ -1475,12 +1475,33 @@ function showCrmEditor(item, analysis) {
   const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
   const contactEmail = externalAttendees[0]?.email || emailMatch[0] || '';
 
+  const isClosedLost = currentStage === 'Closed Lost';
   const stageOptions = stages.map(s => `<option value="${s}" ${s === currentStage ? 'selected' : ''}>${s}</option>`).join('');
 
   showModal(`⚡ Update HubSpot — ${item.company}`, `
     <div class="modal-field">
       <label class="modal-label">Deal Stage</label>
-      <select class="modal-input" id="crmEditorStage">${stageOptions}</select>
+      <select class="modal-input" id="crmEditorStage" onchange="crmEditorStageChanged()">${stageOptions}</select>
+    </div>
+    <div id="crmClosedLostFields" style="display:${isClosedLost ? 'block' : 'none'};">
+      <div class="modal-field">
+        <label class="modal-label">Lost Reason</label>
+        <select class="modal-input" id="crmEditorLostReason">
+          <option value="">Select reason...</option>
+          <option value="Lost to competitor">Lost to competitor</option>
+          <option value="No budget">No budget</option>
+          <option value="No decision">No decision / went dark</option>
+          <option value="Timing">Timing — not ready</option>
+          <option value="Product fit">Product fit / feature gap</option>
+          <option value="Champion left">Champion left company</option>
+          <option value="Internal solution">Built / chose internal solution</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Competitor (if applicable)</label>
+        <input class="modal-input" id="crmEditorCompetitor" placeholder="e.g. Northbeam, Rockerbox, Triple Whale...">
+      </div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Deal Value</label>
@@ -1491,8 +1512,12 @@ function showCrmEditor(item, analysis) {
       <input class="modal-input" id="crmEditorCloseDate" type="date" value="${closeDate}">
     </div>
     <div class="modal-field">
-      <label class="modal-label">Call Note</label>
+      <label class="modal-label" style="display:flex;justify-content:space-between;align-items:center;">
+        Notes
+        <button onclick="pullEmailThread('${item.company.replace(/'/g, "\\'")}')" style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);cursor:pointer;font-weight:600;">Pull Email Thread</button>
+      </label>
       <textarea class="modal-textarea" id="crmEditorNote" rows="6" placeholder="Summary, next steps, key takeaways...">${noteText}</textarea>
+      <div id="crmEmailThreadStatus" style="margin-top:4px;"></div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Contact Name</label>
@@ -1508,6 +1533,59 @@ function showCrmEditor(item, analysis) {
 
   // Store for synthetic items (no ACTIONS entry)
   window._crmEditorItem = item;
+}
+
+function crmEditorStageChanged() {
+  const stage = document.getElementById('crmEditorStage')?.value;
+  const closedFields = document.getElementById('crmClosedLostFields');
+  if (closedFields) closedFields.style.display = stage === 'Closed Lost' ? 'block' : 'none';
+}
+
+async function pullEmailThread(company) {
+  const statusEl = document.getElementById('crmEmailThreadStatus');
+  const noteEl = document.getElementById('crmEditorNote');
+  if (!statusEl || !noteEl) return;
+
+  statusEl.innerHTML = '<div style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:6px;"><div class="spin" style="width:14px;height:14px;"></div>Searching Gmail for ' + company + '...</div>';
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'search_emails', query: company, maxResults: 15 }),
+    });
+    const data = await res.json();
+    if (!data.success || !data.result?.length) {
+      statusEl.innerHTML = '<div style="font-size:11px;color:#f59e0b;">No emails found for "' + company + '"</div>';
+      return;
+    }
+
+    const emails = data.result;
+    // Group by thread
+    const threads = {};
+    for (const e of emails) {
+      if (!threads[e.threadId]) threads[e.threadId] = [];
+      threads[e.threadId].push(e);
+    }
+
+    // Build formatted thread summary
+    let threadText = `\n\n--- Email Thread: ${company} (${emails.length} messages) ---\n`;
+    for (const [threadId, msgs] of Object.entries(threads)) {
+      const subject = msgs[0].subject || '(no subject)';
+      threadText += `\nSubject: ${subject}\n`;
+      for (const m of msgs) {
+        const dateStr = m.date ? new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+        const fromName = m.from.replace(/<.*>/, '').trim();
+        threadText += `  ${dateStr} — ${fromName}: ${m.snippet}\n`;
+      }
+    }
+
+    // Append to notes
+    noteEl.value = (noteEl.value ? noteEl.value + '\n' : '') + threadText;
+    statusEl.innerHTML = `<div style="font-size:11px;color:#10b981;">Pulled ${emails.length} emails across ${Object.keys(threads).length} thread(s)</div>`;
+  } catch (err) {
+    statusEl.innerHTML = `<div style="font-size:11px;color:#ef4444;">Error: ${err.message}</div>`;
+  }
 }
 
 async function submitCrmEditor(itemId) {
@@ -1533,18 +1611,28 @@ async function submitCrmEditor(itemId) {
       results.push('Stage updated');
     }
 
-    // Update deal value and close date if deal exists
-    if (deal && (value || closeDate)) {
+    // Update deal properties (value, close date, closed lost fields)
+    if (deal) {
       const props = {};
       if (value) props.amount = value;
       if (closeDate) props.closedate = closeDate;
-      await fetch('/api/crm-update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_stage', dealId: deal.id, properties: props }),
-      });
-      if (value) results.push('Value updated');
-      if (closeDate) results.push('Close date updated');
+      // Closed Lost specific fields
+      if (stage === 'Closed Lost') {
+        const lostReason = document.getElementById('crmEditorLostReason')?.value;
+        const competitor = document.getElementById('crmEditorCompetitor')?.value?.trim();
+        if (lostReason) props.closed_lost_reason = lostReason;
+        if (competitor) props.hs_lost_to_competitor = competitor;
+      }
+      if (Object.keys(props).length > 0) {
+        await fetch('/api/crm-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_deal', dealId: deal.id, properties: props }),
+        });
+        if (value) results.push('Value updated');
+        if (closeDate) results.push('Close date updated');
+        if (props.closed_lost_reason) results.push('Lost reason: ' + props.closed_lost_reason);
+      }
     }
 
     // Add note
@@ -2642,26 +2730,38 @@ function handleLocalCommand(text) {
     const match = findCompanyInText(t);
     if (match) { selectItem(match.id); setTimeout(() => { if(match.draftPrompt) runAction("draft"); }, 100); return true; }
   }
-  // HubSpot — open editable CRM editor
-  if (t.match(/\b(hubspot|crm|update crm|log|update hub|deal stage|update deal|change.*hubspot|hubspot.*change|modify.*hubspot)\b/)) {
-    if (sel) { showCrmEditor(sel, _lastActionContext.analysis); return true; }
+  // HubSpot / CRM update — open editable CRM editor
+  // Matches: "update Guitar Center", "move Guitar Center to closed lost", "close lost Guitar Center",
+  // "hubspot Guitar Center", "update crm for X", "change X to negotiating", etc.
+  const crmMatch = t.match(/\b(hubspot|crm|update crm|update hub|deal stage|update deal|change.*hubspot|hubspot.*change|modify.*hubspot)\b/)
+    || t.match(/\b(move|change|set|update|mark)\b.*\b(to|as)\s+(closed?\s*(lost|won)|negotiat|commit|demo|disco|nurture|booking)/i)
+    || t.match(/\b(close\s*(lost|won)|closed?\s*(lost|won))\b.*\b\w{3,}/)
+    || (t.match(/\bupdate\b/) && (findCompanyInText(t) || findDealInText(t)));
+  if (crmMatch) {
+    // Detect pre-selected stage from command text
+    const stageHint = extractStageFromText(t);
+    const openCrmForTarget = (target) => {
+      const opts = stageHint ? { presetStage: stageHint } : {};
+      showCrmEditor(target, _lastActionContext.analysis, opts);
+    };
+    if (sel && !findCompanyInText(t) && !findDealInText(t)) { openCrmForTarget(sel); return true; }
     const match = findCompanyInText(t);
-    if (match) { selectItem(match.id); setTimeout(() => showCrmEditor(match, _lastActionContext.analysis), 100); return true; }
-    // Also search pipeline deals directly
+    if (match) { selectItem(match.id); setTimeout(() => openCrmForTarget(match), 100); return true; }
     const deal = findDealInText(t);
     if (deal) {
-      const synthItem = { id: -1, company: deal.name, task: '', status: 'open', dealValue: deal.amount };
-      showCrmEditor(synthItem, _lastActionContext.analysis);
+      _lastMentionedCompany = deal.name;
+      const synthItem = { id: -1, company: deal.name, task: '', status: 'open', dealValue: deal.amount, hubspot: deal.hubspot };
+      openCrmForTarget(synthItem);
       return true;
     }
-    // Last resort: use last-mentioned company
+    if (sel) { openCrmForTarget(sel); return true; }
     if (_lastMentionedCompany) {
       const lastAction = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
-      if (lastAction) { selectItem(lastAction.id); setTimeout(() => showCrmEditor(lastAction, _lastActionContext.analysis), 100); return true; }
+      if (lastAction) { selectItem(lastAction.id); setTimeout(() => openCrmForTarget(lastAction), 100); return true; }
       const lastDeal = PIPELINE.find(d => d.name.toLowerCase() === _lastMentionedCompany.toLowerCase());
       if (lastDeal) {
         const synthItem = { id: -1, company: lastDeal.name, task: '', status: 'open', dealValue: lastDeal.amount };
-        showCrmEditor(synthItem, _lastActionContext.analysis);
+        openCrmForTarget(synthItem);
         return true;
       }
     }
@@ -2698,6 +2798,20 @@ function findCompanyInText(text) {
     const actionMatch = ACTIONS.find(a => a.status === "open" && a.company.toLowerCase() === deal.name.toLowerCase());
     if (actionMatch) return actionMatch;
   }
+  return null;
+}
+
+function extractStageFromText(text) {
+  const t = text.toLowerCase();
+  if (t.match(/close[d]?\s*lost/)) return 'Closed Lost';
+  if (t.match(/close[d]?\s*won/)) return 'Closed Won';
+  if (t.match(/negotiat/)) return 'Negotiating';
+  if (t.match(/committed/)) return 'Committed';
+  if (t.match(/demo\s*scheduled/)) return 'Demo Scheduled';
+  if (t.match(/demo\s*completed/)) return 'Demo Completed';
+  if (t.match(/disco\s*booked/)) return 'Disco Booked';
+  if (t.match(/disco\s*complete/)) return 'Disco Complete';
+  if (t.match(/nurture/)) return 'Nurture';
   return null;
 }
 

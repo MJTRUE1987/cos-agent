@@ -22,9 +22,13 @@ export default async function handler(req, res) {
     let result = {};
 
     switch (action) {
-      case 'update_stage': {
-        if (!dealId || !properties?.dealstage) {
-          return res.status(400).json({ error: 'dealId and properties.dealstage required' });
+      case 'update_stage':
+      case 'update_deal': {
+        if (!dealId) {
+          return res.status(400).json({ error: 'dealId required' });
+        }
+        if (!properties || Object.keys(properties).length === 0) {
+          return res.status(400).json({ error: 'properties required' });
         }
         const r = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/${dealId}`, {
           method: 'PATCH',
@@ -32,6 +36,59 @@ export default async function handler(req, res) {
           body: JSON.stringify({ properties }),
         });
         result = await r.json();
+        break;
+      }
+
+      case 'search_emails': {
+        // Search Gmail for messages matching a company name
+        const query = req.body.query;
+        const maxResults = req.body.maxResults || 10;
+        if (!query) return res.status(400).json({ error: 'query required' });
+
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+        if (!clientId || !clientSecret || !refreshToken) {
+          return res.status(500).json({ error: 'Gmail not configured' });
+        }
+
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        });
+        const tokenData = await tokenRes.json();
+        if (!tokenData.access_token) return res.status(500).json({ error: 'Gmail auth failed' });
+
+        const gmailHeaders = { Authorization: `Bearer ${tokenData.access_token}` };
+        const listRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`,
+          { headers: gmailHeaders }
+        );
+        if (!listRes.ok) return res.status(500).json({ error: 'Gmail search failed' });
+        const listData = await listRes.json();
+        const messages = listData.messages || [];
+
+        const details = await Promise.all(
+          messages.slice(0, maxResults).map(m =>
+            fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, { headers: gmailHeaders })
+              .then(r2 => r2.json())
+              .catch(() => null)
+          )
+        );
+
+        result = details.filter(Boolean).map(msg => {
+          const getHeader = (name) => (msg.payload?.headers || []).find(h => h.name === name)?.value || '';
+          return {
+            id: msg.id,
+            threadId: msg.threadId,
+            from: getHeader('From'),
+            to: getHeader('To'),
+            subject: getHeader('Subject'),
+            date: getHeader('Date'),
+            snippet: msg.snippet || '',
+          };
+        });
         break;
       }
 
