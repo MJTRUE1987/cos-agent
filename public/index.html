@@ -1008,6 +1008,7 @@ function renderContextBar() {
         <button class="ctx-big-btn ctx-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🧠</span> Prep</button>
         <button class="ctx-big-btn ctx-crm" onclick="runAction('hubspot',${sel.id})"><span class="icon">⚡</span> CRM</button>
         <button class="ctx-big-btn ctx-li" onclick="runAction('linkedin',${sel.id})"><span class="icon">💼</span> LinkedIn</button>
+        <button class="ctx-big-btn" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="runAction('proposal',${sel.id})"><span class="icon">📄</span> Proposal</button>
         <button class="ctx-big-btn ctx-slack-btn" onclick="showSlackMenu(${sel.id})"><span class="icon">💬</span> Slack</button>
       </div>
       <div class="ctx-bottom-row">
