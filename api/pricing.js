@@ -55,6 +55,7 @@ export default async function handler(req, res) {
     variableRateMultiplier: body.variableRateMultiplier || null,
     additionalDiscountAmount: body.additionalDiscountAmount || null,
     excludedOrNonManagedSpend: body.excludedOrNonManagedSpend || null,
+    adSpendBreakdown: body.adSpendBreakdown || null,
     notes: body.notes || null,
   };
 

@@ -3411,7 +3411,48 @@ function renderPricingView(main) {
           </div>
           <div>
             <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">LTM Media Spend * ($)</label>
-            <input id="pSpend" class="search-input" style="width:100%;" type="number" placeholder="e.g. 5000000">
+            <input id="pSpend" class="search-input" style="width:100%;font-weight:700;font-size:14px;" type="number" placeholder="e.g. 5000000">
+            <div style="margin-top:6px;">
+              <div onclick="toggleAdSpend()" style="font-size:11px;color:#22d3ee;cursor:pointer;display:flex;align-items:center;gap:4px;user-select:none;">
+                <span id="adSpendToggle">▼</span> Spend by ad channel
+              </div>
+              <div id="adSpendBreakdown" style="display:block;margin-top:6px;background:#111827;border:1px solid #1e293b;border-radius:6px;padding:8px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Meta (FB/IG)</label>
+                    <input class="search-input ad-spend-input" id="pSpendMeta" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Google</label>
+                    <input class="search-input ad-spend-input" id="pSpendGoogle" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">TikTok</label>
+                    <input class="search-input ad-spend-input" id="pSpendTikTok" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Amazon Ads</label>
+                    <input class="search-input ad-spend-input" id="pSpendAmazonAds" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Snapchat</label>
+                    <input class="search-input ad-spend-input" id="pSpendSnapchat" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Pinterest</label>
+                    <input class="search-input ad-spend-input" id="pSpendPinterest" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">CTV / Linear TV</label>
+                    <input class="search-input ad-spend-input" id="pSpendCTV" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                  <div>
+                    <label style="font-size:10px;color:#64748b;">Other</label>
+                    <input class="search-input ad-spend-input" id="pSpendOther" type="number" placeholder="0" style="width:100%;font-size:12px;padding:4px 6px;" oninput="sumAdSpend()">
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div>
             <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Sales Channels *</label>
@@ -3632,6 +3673,46 @@ function refreshChat() {
   c.scrollTop = c.scrollHeight;
 }
 
+const AD_SPEND_CHANNELS = [
+  { id: 'pSpendMeta', label: 'Meta (FB/IG)' },
+  { id: 'pSpendGoogle', label: 'Google' },
+  { id: 'pSpendTikTok', label: 'TikTok' },
+  { id: 'pSpendAmazonAds', label: 'Amazon Ads' },
+  { id: 'pSpendSnapchat', label: 'Snapchat' },
+  { id: 'pSpendPinterest', label: 'Pinterest' },
+  { id: 'pSpendCTV', label: 'CTV / Linear TV' },
+  { id: 'pSpendOther', label: 'Other' },
+];
+
+function toggleAdSpend() {
+  const panel = document.getElementById('adSpendBreakdown');
+  const toggle = document.getElementById('adSpendToggle');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    toggle.textContent = '▼';
+  } else {
+    panel.style.display = 'none';
+    toggle.textContent = '▶';
+  }
+}
+
+function sumAdSpend() {
+  let total = 0;
+  for (const ch of AD_SPEND_CHANNELS) {
+    total += parseFloat(document.getElementById(ch.id)?.value) || 0;
+  }
+  document.getElementById('pSpend').value = total > 0 ? total : '';
+}
+
+function getAdSpendBreakdown() {
+  const breakdown = [];
+  for (const ch of AD_SPEND_CHANNELS) {
+    const val = parseFloat(document.getElementById(ch.id)?.value) || 0;
+    if (val > 0) breakdown.push({ channel: ch.label, spend: val });
+  }
+  return breakdown;
+}
+
 function pricingChannelToggle() {
   const retail = document.getElementById('pChRetail');
   const retailFields = document.getElementById('pRetailFields');
@@ -3681,9 +3762,12 @@ async function runPricingCalc() {
 
   const targetAnnual = parseFloat(document.getElementById('pTargetPrice')?.value) || null;
 
+  const adSpendBreakdown = getAdSpendBreakdown();
+
   const input = {
     brandName: brand,
     ltmMediaSpend: spend,
+    adSpendBreakdown: adSpendBreakdown.length > 0 ? adSpendBreakdown : null,
     enabledChannels: channels,
     numberOfRetailChannels: retailCount || 1,
     retailerNames: document.getElementById('pRetailNames')?.value?.split(',').map(s => s.trim()).filter(Boolean) || null,
@@ -3776,6 +3860,15 @@ function renderPricingResults(data, container) {
       <div style="font-size:11px;color:#22d3ee;font-weight:600;">Balanced ${data.reverseResult.discountPercent.toFixed(2)}% discount applied to Model Fees + Media Fee</div>
       <div style="font-size:10px;color:#64748b;margin-top:2px;">Target: ${fmtMoney2(data.reverseResult.achievedAnnual)} | List: ${fmtMoney(data.reverseResult.listPriceAnnual)}/yr | Savings: ${fmtMoney(data.reverseResult.listPriceAnnual - data.reverseResult.achievedAnnual)}/yr</div>
     </div>` : p.discountPercent ? `<div style="font-size:11px;color:#f59e0b;margin-bottom:12px;">Discount: ${p.discountPercent}% (-${fmtMoney(p.discountAmount)}) | List: ${fmtMoney(p.listPriceAnnual)}/yr</div>` : ''}
+    ${_lastPricingInput?.adSpendBreakdown?.length ? `<div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Ad Spend Breakdown</div>
+      <table style="width:100%;border-collapse:collapse;">
+        ${_lastPricingInput.adSpendBreakdown.map(s =>
+          `<tr style="border-bottom:1px solid #1e293b;"><td style="padding:4px 8px;font-size:12px;color:#cbd5e1;">${s.channel}</td><td style="padding:4px 8px;font-size:12px;text-align:right;color:#a855f7;">${fmtMoney(s.spend)}</td><td style="padding:4px 8px;font-size:11px;text-align:right;color:#64748b;">${(s.spend / p.ltmMediaSpend * 100).toFixed(1)}%</td></tr>`
+        ).join('')}
+        <tr style="border-top:1px solid #334155;"><td style="padding:4px 8px;font-size:12px;color:#94a3b8;font-weight:600;">Total</td><td style="padding:4px 8px;font-size:12px;text-align:right;color:#a855f7;font-weight:600;">${fmtMoney(p.ltmMediaSpend)}</td><td style="padding:4px 8px;font-size:11px;text-align:right;color:#64748b;">100%</td></tr>
+      </table>
+    </div>` : ''}
     <div style="margin-bottom:16px;">
       <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Model Fee Breakdown</div>
       <table style="width:100%;border-collapse:collapse;">

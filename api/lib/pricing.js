@@ -492,6 +492,11 @@ export function formatPricingSummary(input, pricing, approval) {
     '## Investment Summary',
     '',
     `**Global LTM Media Spend:** $${pricing.ltmMediaSpend.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+    ...(input.adSpendBreakdown && input.adSpendBreakdown.length > 0 ? [
+      '',
+      '**Spend by Ad Channel:**',
+      ...input.adSpendBreakdown.map(s => `- ${s.channel}: $${s.spend.toLocaleString('en-US', { maximumFractionDigits: 0 })} (${(s.spend / pricing.ltmMediaSpend * 100).toFixed(1)}%)`),
+    ] : []),
     `**Enabled Models:** ${channelsStr}`,
     '', '---', '',
     '### Model Fees (per GMV Tier)',
