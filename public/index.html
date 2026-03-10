@@ -26,7 +26,8 @@
   .sidebar .user strong { color: #cbd5e1; display: block; }
 
   /* CENTER */
-  .center { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .center { flex: 1; overflow: hidden; }
+  #main { padding: 24px 28px; }
   .center h1 { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
   .center .subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; }
 
@@ -279,6 +280,21 @@
   .ctx-arch { color: #475569; }
   .ctx-arch:hover { color: #ef4444; border-color: rgba(239,68,68,0.3); }
 
+  /* LIVE FEED BAR */
+  .live-feed { background: #0a0e1a; border-bottom: 1px solid #1e293b; padding: 0; max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease; }
+  .live-feed.open { max-height: 200px; padding: 8px 16px; overflow-y: auto; }
+  .live-feed-toggle { display: flex; align-items: center; gap: 8px; padding: 6px 16px; background: #0f1629; border-bottom: 1px solid #1e293b; cursor: pointer; font-size: 11px; color: #64748b; user-select: none; }
+  .live-feed-toggle:hover { background: #111a2e; color: #94a3b8; }
+  .live-feed-toggle .feed-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: feedPulse 2s ease-in-out infinite; }
+  .live-feed-toggle .feed-count { background: #1e40af; color: #93c5fd; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 8px; margin-left: auto; }
+  @keyframes feedPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .feed-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1e293b22; font-size: 11px; line-height: 1.4; }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-time { color: #475569; font-size: 10px; white-space: nowrap; min-width: 44px; }
+  .feed-icon { font-size: 12px; }
+  .feed-text { color: #94a3b8; }
+  .feed-text strong { color: #e2e8f0; }
+
   /* IDLE START PROMPT */
   .idle-prompt { padding: 16px; border-top: 1px solid #1e293b; text-align: center; }
   .idle-start-btn { padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 700; background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); color: #fff; width: 100%; margin-bottom: 8px; box-shadow: 0 2px 12px rgba(30,64,175,0.25); }
@@ -303,7 +319,17 @@
     </div>
     <div class="user"><strong>Mike True</strong>Co-founder &amp; CEO</div>
   </div>
-  <div class="center" id="main"><div style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⚡</div><div style="font-size:14px;color:#64748b;">Loading dashboard...</div></div></div></div>
+  <div class="center" style="display:flex;flex-direction:column;">
+    <div class="live-feed-toggle" onclick="toggleFeed()">
+      <div class="feed-dot"></div>
+      <span>Live Feed</span>
+      <span style="font-size:10px;color:#475569;" id="autoSyncLabel">auto-syncing every 3m</span>
+      <span class="feed-count" id="feedCount" style="display:none;">0</span>
+      <span style="margin-left:4px;">&#9662;</span>
+    </div>
+    <div class="live-feed" id="liveFeed"></div>
+    <div id="main" style="flex:1;overflow-y:auto;"><div style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⚡</div><div style="font-size:14px;color:#64748b;">Loading dashboard...</div></div></div></div>
+  </div>
   <div class="chat-panel">
     <div class="chat-header"><div class="pulse"></div><h3>Agent</h3><span class="badge" id="chatBadge">Ready</span></div>
     <div class="chat-messages" id="chatMessages"></div>
@@ -487,13 +513,41 @@ async function syncInBackground() {
     renderCurrentTab();
     updateSyncIndicator();
 
-    const total = (data.summary?.emailsProcessed || 0) + (data.summary?.dealsUpdated || 0) + (data.summary?.meetingsFound || 0);
+    // Post to live feed
+    const newEmails = data.summary?.emailsProcessed || 0;
+    const newDeals = data.summary?.dealsUpdated || 0;
+    const newMtgs = data.summary?.meetingsFound || 0;
+    const total = newEmails + newDeals + newMtgs;
+
+    if (newEmails > 0) {
+      (data.newActions || []).forEach(a => {
+        addFeedItem('email', `<strong>${a.company}</strong> — ${a.task}`, a.id);
+      });
+    }
+    if (newDeals > 0) {
+      (data.updatedPipeline || []).forEach(d => {
+        addFeedItem('deal', `<strong>${d.name}</strong> moved to ${d.stage}`, null);
+      });
+    }
+    if (newMtgs > 0) {
+      (data.newMeetings || []).forEach(m => {
+        addFeedItem('meeting', `<strong>${m.title}</strong> — ${m.people}`, null);
+      });
+    }
+
     if (total > 0) {
-      showToast(`Synced: ${data.summary.emailsProcessed} emails, ${data.summary.dealsUpdated} deals, ${data.summary.meetingsFound} meetings`);
+      showToast(`Synced: ${newEmails} emails, ${newDeals} deals, ${newMtgs} meetings`);
+    } else {
+      addFeedItem('sync', 'No new updates', null);
+    }
+
+    if (data.summary?.errors?.length) {
+      data.summary.errors.forEach(e => addFeedItem('error', e, null));
     }
   } catch (err) {
     console.error('Sync error:', err);
     if (indicator) indicator.innerHTML = '<span style="color:#ef4444;">Sync failed</span>';
+    addFeedItem('error', 'Sync failed — ' + (err.message || 'unknown error'), null);
   }
 }
 
@@ -506,6 +560,74 @@ function updateSyncIndicator() {
     indicator.innerHTML = `<span style="color:#64748b;">Synced ${label}</span>`;
   } else {
     indicator.innerHTML = '<span style="color:#475569;">Not synced</span>';
+  }
+}
+
+// ═══════════════════════════════════════
+// LIVE FEED + AUTO-SYNC
+// ═══════════════════════════════════════
+const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
+let _syncTimer = null;
+let _feedItems = [];
+let _feedOpen = false;
+let _feedUnread = 0;
+
+function startAutoSync() {
+  if (_syncTimer) clearInterval(_syncTimer);
+  _syncTimer = setInterval(() => {
+    syncInBackground();
+    updateSyncIndicator();
+  }, SYNC_INTERVAL_MS);
+  // Also keep the "synced X ago" label fresh
+  setInterval(updateSyncIndicator, 30000);
+}
+
+function toggleFeed() {
+  _feedOpen = !_feedOpen;
+  const feed = document.getElementById('liveFeed');
+  if (feed) feed.classList.toggle('open', _feedOpen);
+  if (_feedOpen) {
+    _feedUnread = 0;
+    updateFeedCount();
+  }
+}
+
+function addFeedItem(type, text, actionId) {
+  const icons = { email: '\u2709\uFE0F', deal: '\u26A1', meeting: '\uD83D\uDCC5', sync: '\u2714\uFE0F', error: '\u26A0\uFE0F' };
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+
+  const item = { type, text, time: timeStr, actionId, ts: now.getTime() };
+  _feedItems.unshift(item);
+  if (_feedItems.length > 50) _feedItems.length = 50; // cap at 50
+
+  if (!_feedOpen) {
+    _feedUnread++;
+    updateFeedCount();
+  }
+
+  const feed = document.getElementById('liveFeed');
+  if (!feed) return;
+
+  const clickAttr = actionId ? ` onclick="selectItem(${actionId})" style="cursor:pointer;"` : '';
+  const el = document.createElement('div');
+  el.className = 'feed-item';
+  el.innerHTML = `<span class="feed-time">${timeStr}</span><span class="feed-icon">${icons[type] || '\u2022'}</span><span class="feed-text"${clickAttr}>${text}</span>`;
+
+  feed.insertBefore(el, feed.firstChild);
+
+  // Trim DOM to 50 items
+  while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+function updateFeedCount() {
+  const badge = document.getElementById('feedCount');
+  if (!badge) return;
+  if (_feedUnread > 0) {
+    badge.textContent = _feedUnread;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
   }
 }
 
@@ -2852,7 +2974,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Load data from API first
   await loadData();
   updateSyncIndicator();
-  syncInBackground(); // Non-blocking background sync
+  syncInBackground(); // Initial sync
+  startAutoSync(); // Auto-sync every 3 minutes
 
   const input = document.getElementById("chatInput");
   input.addEventListener("input", () => { input.style.height = "40px"; input.style.height = Math.min(input.scrollHeight,120)+"px"; });
