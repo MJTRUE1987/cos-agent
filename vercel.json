@@ -1,7 +1,17 @@
 {
   "rewrites": [
     { "source": "/api/data", "destination": "/api/data.js" },
-    { "source": "/api/update", "destination": "/api/update.js" }
+    { "source": "/api/update", "destination": "/api/update.js" },
+    { "source": "/api/ai", "destination": "/api/ai.js" },
+    { "source": "/api/draft-email", "destination": "/api/draft-email.js" },
+    { "source": "/api/proposal", "destination": "/api/proposal.js" },
+    { "source": "/api/crm-update", "destination": "/api/crm-update.js" },
+    { "source": "/api/prep", "destination": "/api/prep.js" },
+    { "source": "/api/linkedin", "destination": "/api/linkedin.js" },
+    { "source": "/api/calendar", "destination": "/api/calendar.js" },
+    { "source": "/api/post-call", "destination": "/api/post-call.js" },
+    { "source": "/api/slack", "destination": "/api/slack.js" },
+    { "source": "/api/granola", "destination": "/api/granola.js" }
   ],
   "headers": [
     {

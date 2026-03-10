@@ -51,9 +51,9 @@
   .mtg-btns { display: flex; gap: 6px; margin-top: 8px; }
 
   /* ITEMS (Reply Now, CRM Gaps, Leads) */
-  .item { background: #111827; border: 2px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-bottom: 6px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; transition: all 0.15s; position: relative; }
-  .item:hover { border-color: #334155; }
-  .item.selected { border-color: #3b82f6; background: rgba(59,130,246,0.06); }
+  .item { background: #111827; border: 2px solid #1e293b; border-radius: 10px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .item:hover { border-color: #334155; background: #131b2e; transform: translateY(-1px); }
+  .item.selected { border-color: #3b82f6; background: rgba(59,130,246,0.08); box-shadow: 0 0 0 1px rgba(59,130,246,0.1); }
   .item .company { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
   .item .body { flex: 1; min-width: 0; }
   .item .body .task { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
@@ -176,22 +176,132 @@
   .slack-opt { display: block; width: 100%; text-align: left; padding: 7px 14px; font-size: 13px; color: #cbd5e1; background: transparent; border: none; cursor: pointer; font-family: inherit; }
   .slack-opt:hover { background: #334155; color: #fff; }
   .dd-sep { height: 1px; background: #334155; margin: 4px 0; }
+
+  /* MODAL OVERLAY */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+  .modal { background: #111827; border: 1px solid #1e293b; border-radius: 12px; width: 560px; max-width: 92vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #1e293b; }
+  .modal-title { font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .modal-close { background: transparent; color: #64748b; font-size: 18px; padding: 4px 8px; border-radius: 4px; }
+  .modal-close:hover { color: #fff; background: #1e293b; }
+  .modal-body { padding: 20px; }
+  .modal-footer { padding: 14px 20px; border-top: 1px solid #1e293b; display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-footer button { padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .modal-btn-primary { background: #1e40af; color: #93c5fd; }
+  .modal-btn-primary:hover { background: #1d4ed8; }
+  .modal-btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .modal-btn-secondary:hover { color: #fff; }
+  .modal-btn-green { background: rgba(16,185,129,0.2); color: #10b981; }
+  .modal-btn-green:hover { background: rgba(16,185,129,0.3); }
+  .modal-btn-purple { background: rgba(168,85,247,0.2); color: #a855f7; }
+  .modal-btn-purple:hover { background: rgba(168,85,247,0.3); }
+  .modal-btn-linkedin { background: #0a66c2; color: #fff; }
+  .modal-btn-linkedin:hover { background: #004182; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; display: block; }
+  .modal-input { width: 100%; background: #0a0e1a; border: 1px solid #334155; border-radius: 6px; padding: 10px 12px; color: #e2e8f0; font-size: 13px; font-family: inherit; outline: none; box-sizing: border-box; }
+  .modal-input:focus { border-color: #3b82f6; }
+  .modal-textarea { width: 100%; background: #0a0e1a; border: 1px solid #334155; border-radius: 6px; padding: 10px 12px; color: #e2e8f0; font-size: 13px; font-family: inherit; outline: none; resize: vertical; line-height: 1.6; box-sizing: border-box; }
+  .modal-textarea:focus { border-color: #3b82f6; }
+  .modal-info { background: #0a0e1a; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; font-size: 12px; line-height: 1.7; color: #94a3b8; white-space: pre-wrap; }
+  .modal-loading { display: flex; align-items: center; gap: 10px; padding: 20px; color: #64748b; font-size: 13px; }
+  .modal-loading .spin { width: 16px; height: 16px; border: 2px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .modal-success { color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .modal-error { color: #ef4444; font-size: 12px; margin-top: 8px; }
+  .crm-option { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; }
+  .crm-option:hover { border-color: #3b82f6; background: rgba(59,130,246,0.04); }
+  .crm-option.selected { border-color: #3b82f6; background: rgba(59,130,246,0.08); }
+  .crm-option-icon { font-size: 20px; width: 32px; text-align: center; }
+  .crm-option-text { flex: 1; }
+  .crm-option-title { font-size: 13px; font-weight: 600; color: #fff; }
+  .crm-option-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .prep-section { margin-bottom: 16px; }
+  .prep-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #1e293b; }
+
+  /* HERO START MY DAY */
+  .hero { background: linear-gradient(135deg, #0f1525 0%, #1a1f3a 100%); border: 1px solid #1e293b; border-radius: 12px; padding: 24px 28px; margin-bottom: 24px; }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .hero-greeting { font-size: 22px; font-weight: 700; color: #fff; }
+  .hero-date { font-size: 13px; color: #64748b; }
+  .hero-stats { display: flex; gap: 20px; margin-bottom: 18px; }
+  .hero-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .hero-stat-num { font-size: 26px; font-weight: 800; }
+  .hero-stat-num.green { color: #10b981; }
+  .hero-stat-num.red { color: #ef4444; }
+  .hero-stat-num.blue { color: #60a5fa; }
+  .hero-stat-num.yellow { color: #f59e0b; }
+  .hero-stat-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+  .hero-start-btn { width: 100%; padding: 14px 24px; border-radius: 10px; font-size: 15px; font-weight: 700; background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.2s; box-shadow: 0 4px 16px rgba(30,64,175,0.3); }
+  .hero-start-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(30,64,175,0.4); }
+  .hero-start-btn .arrow { font-size: 18px; transition: transform 0.2s; }
+  .hero-start-btn:hover .arrow { transform: translateX(3px); }
+  .hero-next-mtg { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .hero-next-mtg .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; animation: pulse 2s infinite; flex-shrink: 0; }
+  .hero-next-mtg strong { color: #fff; }
+  .hero-next-mtg span { color: #94a3b8; }
+
+  /* PROGRESS BAR */
+  .progress-wrap { margin-bottom: 20px; }
+  .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .progress-label { font-size: 12px; color: #64748b; }
+  .progress-count { font-size: 12px; color: #10b981; font-weight: 700; }
+  .progress-track { height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #3b82f6); border-radius: 3px; transition: width 0.5s ease; }
+
+  /* IMPROVED CONTEXT BAR */
+  .context-bar { padding: 14px 16px; border-top: 1px solid #1e293b; background: #111827; }
+  .ctx-selected-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .ctx-company-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ctx-company-name { font-size: 15px; font-weight: 700; color: #fff; flex: 1; }
+  .ctx-quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .ctx-big-btn { padding: 10px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: all 0.15s; }
+  .ctx-big-btn:hover { transform: translateY(-1px); }
+  .ctx-big-btn .icon { font-size: 15px; }
+  .ctx-postcall { background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(124,58,237,0.1)); color: #c4b5fd; border: 1px solid rgba(124,58,237,0.3); grid-column: 1 / -1; }
+  .ctx-postcall:hover { border-color: rgba(124,58,237,0.5); }
+  .ctx-draft { background: rgba(30,64,175,0.15); color: #93c5fd; border: 1px solid rgba(30,64,175,0.3); }
+  .ctx-draft:hover { border-color: rgba(30,64,175,0.5); }
+  .ctx-prep { background: rgba(16,185,129,0.1); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+  .ctx-prep:hover { border-color: rgba(16,185,129,0.4); }
+  .ctx-crm { background: rgba(245,158,11,0.1); color: #fcd34d; border: 1px solid rgba(245,158,11,0.2); }
+  .ctx-crm:hover { border-color: rgba(245,158,11,0.4); }
+  .ctx-li { background: rgba(10,102,194,0.15); color: #93c5fd; border: 1px solid rgba(10,102,194,0.3); }
+  .ctx-li:hover { border-color: rgba(10,102,194,0.5); }
+  .ctx-slack-btn { background: rgba(74,21,75,0.3); color: #E8D5E8; border: 1px solid rgba(74,21,75,0.4); }
+  .ctx-slack-btn:hover { border-color: rgba(74,21,75,0.6); }
+  .ctx-bottom-row { display: flex; gap: 6px; justify-content: center; border-top: 1px solid #1e293b; padding-top: 8px; margin-top: 4px; }
+  .ctx-status-btn { padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; background: transparent; border: 1px solid #1e293b; }
+  .ctx-done { color: #10b981; }
+  .ctx-done:hover { border-color: #10b981; background: rgba(16,185,129,0.08); }
+  .ctx-skip { color: #64748b; }
+  .ctx-skip:hover { color: #94a3b8; border-color: #334155; }
+  .ctx-arch { color: #475569; }
+  .ctx-arch:hover { color: #ef4444; border-color: rgba(239,68,68,0.3); }
+
+  /* IDLE START PROMPT */
+  .idle-prompt { padding: 16px; border-top: 1px solid #1e293b; text-align: center; }
+  .idle-start-btn { padding: 12px 24px; border-radius: 10px; font-size: 14px; font-weight: 700; background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); color: #fff; width: 100%; margin-bottom: 8px; box-shadow: 0 2px 12px rgba(30,64,175,0.25); }
+  .idle-start-btn:hover { box-shadow: 0 4px 20px rgba(30,64,175,0.35); }
+  .idle-refresh { padding: 8px 14px; border-radius: 8px; font-size: 12px; background: transparent; border: 1px solid #1e293b; color: #64748b; width: 100%; }
+  .idle-refresh:hover { color: #94a3b8; border-color: #334155; }
 </style>
 </head>
 <body>
 <div class="layout">
   <div class="sidebar">
     <h2>Prescient AI</h2>
-    <div class="sub">Chief of Staff</div>
+    <div class="sub">Chief of Staff Agent</div>
     <div class="nav-item active" onclick="showTab('today')"><div class="dot" style="background:#10b981;"></div> Today <span class="count" id="navTodayCount"></span></div>
-    <div class="nav-item" onclick="showTab('pipeline')"><div class="dot" style="background:#f59e0b;"></div> Pipeline</div>
-    <div class="nav-item" onclick="showTab('leads')"><div class="dot" style="background:#a855f7;"></div> All Leads</div>
+    <div class="nav-item" onclick="showTab('pipeline')"><div class="dot" style="background:#f59e0b;"></div> Pipeline <span class="count" id="navPipeCount"></span></div>
+    <div class="nav-item" onclick="showTab('leads')"><div class="dot" style="background:#a855f7;"></div> All Leads <span class="count" id="navLeadsCount"></span></div>
     <div class="spacer"></div>
+    <div id="sidebarOverdue" style="margin-bottom:12px;"></div>
     <div class="user"><strong>Mike True</strong>Co-founder &amp; CEO</div>
   </div>
   <div class="center" id="main"><div style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⚡</div><div style="font-size:14px;color:#64748b;">Loading dashboard...</div></div></div></div>
   <div class="chat-panel">
-    <div class="chat-header"><div class="pulse"></div><h3>Agent</h3><span class="badge">Ready</span></div>
+    <div class="chat-header"><div class="pulse"></div><h3>Agent</h3><span class="badge" id="chatBadge">Ready</span></div>
     <div class="chat-messages" id="chatMessages"></div>
     <div id="contextArea"></div>
     <div class="chat-input-area">
@@ -201,6 +311,7 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="modalContainer"></div>
 
 <script>
 // ═══════════════════════════════════════
@@ -235,6 +346,9 @@ let ACTIONS = [];
 
 let MEETINGS = [];
 
+// Live calendar events from Google Calendar
+let CALENDAR_EVENTS = [];
+
 const CAT_CONFIG = {
   inbound: { icon: "&#9679;", label: "Inbound — Act Fast", color: "#10b981" },
   sales: { icon: "&#9679;", label: "Sales Follow-ups", color: "#f59e0b" },
@@ -256,11 +370,47 @@ async function loadData() {
     if (data.pipeline) PIPELINE = data.pipeline;
   } catch (err) {
     console.error("Failed to load data:", err);
-    // Show error in chat if available
     const chat = document.getElementById("chatMessages");
     if (chat) {
       chat.innerHTML = '<div class="chat-msg agent"><strong>Error loading data.</strong> Check API connection.<br><span style="color:#ef4444;font-size:11px;">' + err.message + '</span></div>';
     }
+  }
+  // Load live calendar in background (non-blocking)
+  loadCalendar();
+}
+
+async function loadCalendar() {
+  try {
+    const res = await fetch("/api/calendar");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.meetings) {
+      CALENDAR_EVENTS = data.meetings;
+      // Merge calendar events into MEETINGS if they're external and not already tracked
+      const existingTitles = new Set(MEETINGS.map(m => m.title.toLowerCase()));
+      data.meetings.filter(m => m.external).forEach(ev => {
+        if (!existingTitles.has(ev.title.toLowerCase())) {
+          const startDate = new Date(ev.start);
+          const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          const timeStr = startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+          const dateStr = `${dayNames[startDate.getDay()]} ${startDate.getMonth()+1}/${startDate.getDate()} · ${timeStr}`;
+          MEETINGS.push({
+            date: dateStr,
+            title: ev.title,
+            people: ev.externalAttendees.map(a => a.name).join(', '),
+            upcoming: startDate > new Date(),
+            external: true,
+            summary: `External meeting with ${ev.externalAttendees.map(a => `${a.name} (${a.company})`).join(', ')}`,
+            action: startDate > new Date() ? 'Prep needed' : 'Post-call follow-up needed',
+            status: 'open',
+            calendarEvent: ev, // Store full event for post-call flow
+          });
+        }
+      });
+      renderCurrentTab();
+    }
+  } catch (e) {
+    // Calendar not configured — silent fail
   }
 }
 
@@ -299,12 +449,21 @@ function selectItem(id) {
   if (!a || a.status !== "open") return;
   selectedId = id;
   const days = daysStale(a.lastActivity);
-  const urgency = days >= 5 ? " This is <strong>overdue</strong>." : days >= 3 ? " Getting stale." : "";
+  const urgencyColor = days >= 5 ? '#ef4444' : days >= 3 ? '#f59e0b' : '#10b981';
+  const urgencyLabel = days >= 5 ? 'OVERDUE' : days >= 3 ? 'STALE' : 'FRESH';
+  const urgencyBadge = `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${urgencyColor}20;color:${urgencyColor};margin-left:6px;">${days}d — ${urgencyLabel}</span>`;
+
+  let chatMsg = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><strong style="font-size:14px;">${a.company}</strong>${urgencyBadge}</div>`;
+  if (a.aiRec) chatMsg += `<div style="font-size:11px;color:#a855f7;margin-bottom:8px;">AI: ${a.aiRec}</div>`;
   if (a.emailSummary) {
-    addChat("agent", `<strong>${a.company}</strong>${urgency}<br><br><div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${a.emailSummary}</div>${a.emailUrl ? `<a href="${a.emailUrl}" target="_blank" style="font-size:11px;">Open in Superhuman →</a>` : ""}`);
+    chatMsg += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${a.emailSummary}</div>`;
+    if (a.emailUrl) chatMsg += `<a href="${a.emailUrl}" target="_blank" style="font-size:11px;">Open in Superhuman &rarr;</a>`;
   } else {
-    addChat("agent", `<strong>${a.company}</strong>${urgency}<br><span style="color:#94a3b8;">${a.task}</span>`);
+    chatMsg += `<div style="color:#94a3b8;font-size:13px;">${a.task}</div>`;
   }
+  chatMsg += `<div style="font-size:11px;color:#475569;margin-top:8px;">Use the actions below or type a command.</div>`;
+  addChat("agent", chatMsg);
+
   renderContextBar();
   renderCurrentTab();
 }
@@ -313,7 +472,12 @@ function advanceToNext() {
   const open = getOpen();
   if (open.length === 0) {
     selectedId = null;
-    addChat("agent", "All follow-ups handled. Nice work.");
+    const done = getDone().length;
+    addChat("agent", `<div style="text-align:center;padding:12px 0;">
+      <div style="font-size:28px;margin-bottom:6px;">🎉</div>
+      <div style="font-size:15px;font-weight:700;color:#10b981;margin-bottom:4px;">All clear!</div>
+      <div style="font-size:12px;color:#64748b;">${done} items handled today. Nice work, Mike.</div>
+    </div>`);
     renderContextBar(); renderCurrentTab(); return;
   }
   const allOpen = ACTIONS.filter(a => a.status === "open");
@@ -326,15 +490,28 @@ function markDone(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "done"; a.color = "tg";
-  addChat("agent", `✓ ${a.company} done.`);
+  updateProgressBadge();
+  addChat("agent", `<span style="color:#10b981;font-weight:600;">✓ ${a.company} — done.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
+}
+
+function updateProgressBadge() {
+  const done = getDone().length;
+  const total = done + getOpen().length;
+  const badge = document.getElementById("chatBadge");
+  if (badge && done > 0) {
+    badge.textContent = `${done}/${total} done`;
+    badge.style.background = 'rgba(16,185,129,0.15)';
+    badge.style.color = '#10b981';
+  }
 }
 
 function archiveItem(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "archived";
-  addChat("agent", `✕ ${a.company} archived.`);
+  updateProgressBadge();
+  addChat("agent", `<span style="color:#64748b;">✕ ${a.company} — archived.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
 }
 
@@ -346,32 +523,29 @@ function renderContextBar() {
   const sel = getSelected();
   if (sel && sel.status === "open") {
     const dv = sel.dealValue ? ` <span class="deal-val">${fmtMoney(sel.dealValue)}</span>` : "";
-    let primaryLabel = "Draft + HubSpot";
-    let primaryAction = "both";
-    if (sel.draftPrompt && sel.crmPrompt) { primaryLabel = "Draft + HubSpot"; primaryAction = "both"; }
-    else if (sel.draftPrompt) { primaryLabel = "Draft Reply"; primaryAction = "draft"; }
-    else if (sel.crmPrompt) { primaryLabel = "Update HubSpot"; primaryAction = "hubspot"; }
-    else { primaryLabel = "Prep Me"; primaryAction = "prep"; }
-
     area.innerHTML = `<div class="context-bar">
-      <div class="ctx-top">
-        <div class="ctx-company">${sel.company}${dv}</div>
-        <div class="ctx-status-btns">
-          <button class="ctx-done-btn" onclick="markDone(${sel.id})">✓ Done</button>
-          <button class="ctx-skip-btn" onclick="advanceToNext()">Skip →</button>
-          <button class="ctx-archive-btn" onclick="archiveItem(${sel.id})">✕</button>
-        </div>
+      <div class="ctx-selected-label">Selected</div>
+      <div class="ctx-company-row">
+        <div class="ctx-company-name">${sel.company}${dv}</div>
       </div>
-      <div class="ctx-actions">
-        <button class="ctx-btn ctx-primary" onclick="${primaryAction === 'prep' ? `buildPrep(ACTIONS.find(a=>a.id===${sel.id}))` : `runAction('${primaryAction}')`}">${primaryLabel}</button>
-        <button class="ctx-btn ctx-secondary" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))">Prep</button>
-        <button class="ctx-btn ctx-slack" onclick="showSlackMenu(${sel.id})">Slack</button>
+      <div class="ctx-quick-actions">
+        <button class="ctx-big-btn ctx-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🎙️</span> Post-Call Pipeline</button>
+        <button class="ctx-big-btn ctx-draft" onclick="runAction('draft',${sel.id})"><span class="icon">✏️</span> Draft Email</button>
+        <button class="ctx-big-btn ctx-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🧠</span> Prep</button>
+        <button class="ctx-big-btn ctx-crm" onclick="runAction('hubspot',${sel.id})"><span class="icon">⚡</span> CRM</button>
+        <button class="ctx-big-btn ctx-li" onclick="runAction('linkedin',${sel.id})"><span class="icon">💼</span> LinkedIn</button>
+        <button class="ctx-big-btn ctx-slack-btn" onclick="showSlackMenu(${sel.id})"><span class="icon">💬</span> Slack</button>
+      </div>
+      <div class="ctx-bottom-row">
+        <button class="ctx-status-btn ctx-done" onclick="markDone(${sel.id})">✓ Done</button>
+        <button class="ctx-status-btn ctx-skip" onclick="advanceToNext()">Skip &rarr;</button>
+        <button class="ctx-status-btn ctx-arch" onclick="archiveItem(${sel.id})">✕ Archive</button>
       </div>
     </div>`;
   } else {
-    area.innerHTML = `<div style="padding:8px 16px;border-top:1px solid #1e293b;display:flex;flex-wrap:wrap;gap:5px;">
-      <div class="quick-chip" onclick="startWork()">Start first item</div>
-      <div class="quick-chip" onclick="quickCmd('Pull fresh data from Gmail, HubSpot, and Granola and update my CoS dashboard.')">Refresh data</div>
+    area.innerHTML = `<div class="idle-prompt">
+      <button class="idle-start-btn" onclick="startWork()">Start My Day &rarr;</button>
+      <button class="idle-refresh" onclick="quickCmd('Pull fresh data from Gmail, HubSpot, and Granola and update my CoS dashboard.')">Refresh data</button>
     </div>`;
   }
 }
@@ -383,100 +557,1008 @@ function startWork() {
 }
 
 // ═══════════════════════════════════════
-// ACTIONS (clipboard-based)
+// ACTIONS — Real API integrations
 // ═══════════════════════════════════════
 function runAction(type, id) {
-  // Accept optional id so dropdown items skip selectItem (avoids DOM re-render race)
   const sel = id ? ACTIONS.find(a => a.id === id) : getSelected();
   if (!sel) { addChat("agent", "Select an item first."); return; }
-  if (id) selectedId = id; // sync state without re-rendering
-  let cmd = "", label = "";
-  if (type === "both") {
-    cmd = (sel.draftPrompt || "") + "\n\nAlso: " + (sel.crmPrompt || "");
-    label = `Draft + HubSpot — ${sel.company}`;
-  } else if (type === "draft") {
-    cmd = sel.draftPrompt; label = `Draft Reply — ${sel.company}`;
+  if (id) selectedId = id;
+
+  if (type === "draft") {
+    showDraftModal(sel);
   } else if (type === "hubspot") {
-    cmd = sel.crmPrompt; label = `Update HubSpot — ${sel.company}`;
-  } else if (type === "order") {
-    cmd = `Generate an order form for ${sel.company} using the Luxome template. Pull deal details from HubSpot and our meeting notes.`;
-    label = `Order Form — ${sel.company}`;
+    showCrmWizard(sel);
+  } else if (type === "both" || type === "post-call") {
+    showPostCallFlow(sel);
+  } else if (type === "order" || type === "proposal") {
+    showProposalModal(sel);
+  } else if (type === "linkedin") {
+    showLinkedInModal(sel);
   }
-  if (cmd) {
-    copyToClipboard(cmd);
-    addChat("agent", `<strong>${label}</strong> — copied. Paste in Cowork.`);
-    // Refresh UI after action executes (not before)
-    renderContextBar();
-    renderCurrentTab();
+}
+
+// ── MODAL HELPERS ──
+function closeModal() { document.getElementById("modalContainer").innerHTML = ""; }
+
+function showModal(title, bodyHtml, footerHtml) {
+  document.getElementById("modalContainer").innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">${title}</div>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody">${bodyHtml}</div>
+        ${footerHtml ? `<div class="modal-footer" id="modalFooter">${footerHtml}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════
+// 1. DRAFT EMAIL — Generates with AI, creates Gmail draft
+//    Includes Granola recording link when available
+// ═══════════════════════════════════════
+async function showDraftModal(item, opts = {}) {
+  const { alsoCrm = false, granolaUrl = null, granolaBody = null, callAnalysis = null } = opts;
+  const prompt = item.draftPrompt;
+  if (!prompt && !callAnalysis) { addChat("agent", `No draft context for ${item.company}.`); return; }
+
+  // Extract email addresses from draftPrompt
+  const emailMatch = (prompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+  const toAddr = emailMatch[0] || '';
+  const ccAddrs = emailMatch.slice(1).join(', ') || 'brian@prescientai.com';
+  const grLink = granolaUrl || item.granola || '';
+
+  showModal(`✏️ Draft Email — ${item.company}`,
+    `<div class="modal-loading"><div class="spin"></div>Generating email with AI...</div>`, '');
+
+  try {
+    // Build enhanced prompt with Granola context if available
+    let fullPrompt = prompt || `Draft a follow-up email to ${item.company} after our call.`;
+    if (callAnalysis) {
+      fullPrompt += `\n\nCall Analysis:\nSummary: ${callAnalysis.summary || ''}\nKey Points: ${(callAnalysis.keyPoints || []).join('; ')}\nNext Steps: ${(callAnalysis.nextSteps || []).join('; ')}\nTone: ${callAnalysis.emailTone || 'warm followup'}`;
+    }
+    if (granolaBody) {
+      fullPrompt += `\n\nCall Notes:\n${granolaBody.substring(0, 2000)}`;
+    }
+    if (grLink) {
+      fullPrompt += `\n\nIMPORTANT: Include this meeting recording link in the email: ${grLink}\nSay something like "I've attached the recording from our call for your reference."`;
+    }
+    fullPrompt += '\n\nWrite the email body only (no subject line prefix). Use HTML formatting with <p> tags.';
+
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: fullPrompt }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'AI failed');
+
+    const subjectGuess = item.company + ' — Follow Up';
+    const emailBody = data.text || '';
+
+    document.getElementById("modalBody").innerHTML = `
+      <div class="modal-field">
+        <label class="modal-label">To</label>
+        <input class="modal-input" id="draftTo" value="${toAddr}" placeholder="email@example.com">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">CC</label>
+        <input class="modal-input" id="draftCc" value="${ccAddrs}" placeholder="cc@example.com">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Subject</label>
+        <input class="modal-input" id="draftSubject" value="${subjectGuess}">
+      </div>
+      ${grLink ? `<div class="modal-field">
+        <label class="modal-label">Granola Recording</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="modal-input" id="draftGranolaUrl" value="${grLink}" style="flex:1;">
+          <a href="${grLink}" target="_blank" style="font-size:11px;white-space:nowrap;">Open ↗</a>
+        </div>
+      </div>` : `<div class="modal-field">
+        <label class="modal-label">Granola Recording (optional)</label>
+        <input class="modal-input" id="draftGranolaUrl" value="" placeholder="Paste Granola recording URL...">
+      </div>`}
+      <div class="modal-field">
+        <label class="modal-label">Body</label>
+        <textarea class="modal-textarea" id="draftBody" rows="12">${emailBody}</textarea>
+      </div>
+      <div id="draftStatus"></div>`;
+
+    document.getElementById("modalContainer").querySelector(".modal").insertAdjacentHTML('beforeend',
+      `<div class="modal-footer" id="modalFooter">
+        <button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="modal-btn-primary" onclick="createGmailDraft(${item.id}, ${alsoCrm})">Create Gmail Draft</button>
+      </div>`);
+  } catch (err) {
+    document.getElementById("modalBody").innerHTML = `
+      <div class="modal-error">Failed to generate: ${err.message}</div>
+      <div style="margin-top:12px;">
+        <div class="modal-field">
+          <label class="modal-label">Prompt (copy manually)</label>
+          <textarea class="modal-textarea" rows="6" readonly>${prompt || ''}</textarea>
+        </div>
+      </div>`;
+    document.getElementById("modalContainer").querySelector(".modal").insertAdjacentHTML('beforeend',
+      `<div class="modal-footer"><button class="modal-btn-secondary" onclick="closeModal()">Close</button></div>`);
+  }
+}
+
+async function createGmailDraft(itemId, alsoCrm) {
+  const to = document.getElementById("draftTo").value.trim();
+  const cc = document.getElementById("draftCc").value.trim();
+  const subject = document.getElementById("draftSubject").value.trim();
+  const body = document.getElementById("draftBody").value.trim();
+
+  if (!to || !body) { document.getElementById("draftStatus").innerHTML = '<div class="modal-error">To and Body are required.</div>'; return; }
+
+  document.getElementById("draftStatus").innerHTML = '<div class="modal-loading"><div class="spin"></div>Creating Gmail draft...</div>';
+
+  try {
+    const res = await fetch('/api/draft-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, cc: cc || undefined, subject, body }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create draft');
+
+    document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div>`;
+    document.getElementById("modalFooter").innerHTML = `
+      ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open in Gmail</a>` : ''}
+      <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+
+    addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span>`);
+
+    const item = ACTIONS.find(a => a.id === itemId);
+    if (alsoCrm && item) {
+      setTimeout(() => { closeModal(); showCrmWizard(item); }, 500);
+    }
+  } catch (err) {
+    document.getElementById("draftStatus").innerHTML = `<div class="modal-error">${err.message}</div>`;
   }
 }
 
 // ═══════════════════════════════════════
-// SLACK
+// POST-CALL PIPELINE — The unified flow
+// Granola notes → Analyze → Proposal + Email + CRM
 // ═══════════════════════════════════════
-const SLACK_TARGETS = [
-  { label: "#sales", type: "channel" },
-  { label: "#partnerships", type: "channel" },
-  { label: "#general", type: "channel" },
-  { label: "#deals", type: "channel" },
-  { label: "#leadership", type: "channel" },
-  { label: "#product", type: "channel" },
-  { label: "#engineering", type: "channel" },
-  { label: "#data-science", type: "channel" },
-  { label: "#marketing", type: "channel" },
-  { label: "#client-success", type: "channel" },
-  { label: "#revenue-ops", type: "channel" },
-  { label: "#announcements", type: "channel" },
-  { label: "Brian", type: "person" },
-  { label: "Will", type: "person" },
-  { label: "Jason", type: "person" },
-  { label: "Elliot", type: "person" },
-  { label: "Ali", type: "person" },
-  { label: "Alicia", type: "person" },
-  { label: "Nathan", type: "person" },
-];
+async function showPostCallFlow(item) {
+  if (!item) { addChat("agent", "Select a meeting/item first."); return; }
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+
+  showModal(`🎙️ Post-Call — ${item.company}`, `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;">Post-Call Pipeline</div>
+      <div style="font-size:12px;color:#64748b;">Pulling call notes from Granola...</div>
+    </div>
+    <div id="pcGranolaLoad"><div class="modal-loading"><div class="spin"></div>Searching Granola for ${item.company} notes...</div></div>
+    <div id="pcFormArea" style="display:none;">
+      <div class="modal-field">
+        <label class="modal-label">Granola Recording URL</label>
+        <input class="modal-input" id="pcGranolaUrl" value="${item.granola || ''}" placeholder="https://notes.granola.ai/d/...">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Contact Name</label>
+        <input class="modal-input" id="pcContactName" value="" placeholder="e.g. Marcin Piosik">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Contact Email</label>
+        <input class="modal-input" id="pcContactEmail" value="${emailMatch[0] || ''}" placeholder="contact@company.com">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Call Notes <span style="color:#475569;font-weight:400;">(pulled from Granola — edit if needed)</span></label>
+        <textarea class="modal-textarea" id="pcGranolaNotes" rows="10" placeholder="Loading from Granola..."></textarea>
+      </div>
+    </div>
+    <div id="pcPipelineStatus"></div>`,
+    `<button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="modal-btn-primary" onclick="runPostCallAnalysis(${item.id})" id="pcAnalyzeBtn" disabled>Analyze Call →</button>`);
+
+  // Auto-fetch from Granola API
+  try {
+    const res = await fetch('/api/granola', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        granolaUrl: item.granola || '',
+        company: item.company,
+        analyze: true,
+      }),
+    });
+    const data = await res.json();
+
+    const loadEl = document.getElementById("pcGranolaLoad");
+    const formEl = document.getElementById("pcFormArea");
+    const btn = document.getElementById("pcAnalyzeBtn");
+
+    if (data.success && data.note) {
+      const note = data.note;
+      // Populate form with Granola data
+      if (loadEl) loadEl.innerHTML = `<div class="modal-success" style="margin-bottom:12px;">&#10003; Found: <strong>${note.title || item.company}</strong> — ${new Date(note.createdAt).toLocaleDateString()}</div>`;
+      if (formEl) formEl.style.display = 'block';
+
+      const notesField = document.getElementById("pcGranolaNotes");
+      const urlField = document.getElementById("pcGranolaUrl");
+      const nameField = document.getElementById("pcContactName");
+      const emailField = document.getElementById("pcContactEmail");
+
+      // Fill in call notes (prefer summary, fall back to transcript)
+      if (notesField) notesField.value = note.summaryMarkdown || note.summaryText || note.fullTranscriptText || '';
+
+      // Fill in attendees
+      const externalAttendees = (note.attendees || []).filter(a => a.email && !a.email.includes('prescient'));
+      if (nameField && externalAttendees.length > 0 && !nameField.value) {
+        nameField.value = externalAttendees[0].name || '';
+      }
+      if (emailField && externalAttendees.length > 0 && !emailField.value) {
+        emailField.value = externalAttendees[0].email || '';
+      }
+
+      // If we already have analysis, skip straight to actions
+      if (note.analysis && note.analysis.summary) {
+        _postCallState = {
+          item, deal,
+          granolaUrl: urlField?.value || item.granola || '',
+          contactName: nameField?.value || '',
+          contactEmail: emailField?.value || '',
+          granolaNotes: notesField?.value || '',
+          itemId: item.id,
+          analysis: note.analysis,
+        };
+        if (btn) { btn.disabled = false; btn.textContent = "Analyze Call →"; }
+        // Show analysis immediately
+        showPostCallAnalysisResult(item.id, note.analysis);
+        return;
+      }
+
+      if (btn) { btn.disabled = false; btn.textContent = "Analyze Call →"; }
+    } else {
+      // Granola not available — show manual entry
+      if (loadEl) loadEl.innerHTML = `<div style="color:#f59e0b;font-size:12px;margin-bottom:12px;">Could not pull from Granola (${data.error || 'API key not set'}). Paste notes manually below.</div>`;
+      if (formEl) formEl.style.display = 'block';
+      if (btn) { btn.disabled = false; }
+    }
+  } catch (err) {
+    const loadEl = document.getElementById("pcGranolaLoad");
+    const formEl = document.getElementById("pcFormArea");
+    const btn = document.getElementById("pcAnalyzeBtn");
+    if (loadEl) loadEl.innerHTML = `<div style="color:#f59e0b;font-size:12px;margin-bottom:12px;">Granola unavailable. Paste notes manually.</div>`;
+    if (formEl) formEl.style.display = 'block';
+    if (btn) { btn.disabled = false; }
+  }
+}
+
+// Show analysis results and smart action buttons
+function showPostCallAnalysisResult(itemId, analysis) {
+  const s = _postCallState;
+  const a = analysis;
+
+  document.getElementById("pcPipelineStatus").innerHTML = `
+    <div style="border-top:1px solid #1e293b;margin-top:16px;padding-top:16px;">
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <div style="flex:1;background:#0a0e1a;border:1px solid #10b981;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:18px;margin-bottom:4px;">🎙️</div>
+          <div style="font-size:11px;color:#64748b;">Analyze</div>
+          <div style="font-size:10px;color:#10b981;">Done ✓</div>
+        </div>
+        <div style="flex:1;background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:18px;margin-bottom:4px;">📋</div>
+          <div style="font-size:11px;color:#64748b;">Proposal</div>
+          <div style="font-size:10px;color:#475569;" id="pcStep2Status">${a.shouldCreateProposal ? 'Recommended' : 'Optional'}</div>
+        </div>
+        <div style="flex:1;background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:18px;margin-bottom:4px;">✉️</div>
+          <div style="font-size:11px;color:#64748b;">Email</div>
+          <div style="font-size:10px;color:#475569;" id="pcStep3Status">${a.shouldDraftEmail !== false ? 'Recommended' : 'Optional'}</div>
+        </div>
+        <div style="flex:1;background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:12px;text-align:center;">
+          <div style="font-size:18px;margin-bottom:4px;">⚡</div>
+          <div style="font-size:11px;color:#64748b;">CRM</div>
+          <div style="font-size:10px;color:#475569;" id="pcStep4Status">${a.shouldUpdateCrm !== false ? 'Recommended' : 'Optional'}</div>
+        </div>
+      </div>
+
+      <div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;color:#fff;margin-bottom:8px;">Call Analysis</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.7;margin-bottom:10px;">${a.summary || ''}</div>
+        ${a.keyPoints?.length ? `<div style="margin-bottom:6px;"><strong style="color:#60a5fa;font-size:10px;text-transform:uppercase;">Key Points</strong><ul style="margin:4px 0 0 16px;font-size:12px;color:#cbd5e1;">${a.keyPoints.map(p=>`<li>${p}</li>`).join('')}</ul></div>` : ''}
+        ${a.nextSteps?.length ? `<div style="margin-bottom:6px;"><strong style="color:#10b981;font-size:10px;text-transform:uppercase;">Next Steps</strong><ul style="margin:4px 0 0 16px;font-size:12px;color:#cbd5e1;">${a.nextSteps.map(p=>`<li>${p}</li>`).join('')}</ul></div>` : ''}
+        ${a.buySignals?.length ? `<div style="margin-bottom:6px;font-size:12px;color:#10b981;">Buy signals: ${a.buySignals.join(', ')}</div>` : ''}
+        ${a.objections?.length ? `<div style="margin-bottom:6px;font-size:12px;color:#ef4444;">Objections: ${a.objections.join(', ')}</div>` : ''}
+        <div style="display:flex;gap:12px;font-size:12px;margin-top:8px;">
+          ${a.suggestedDealStage ? `<span>Stage: <strong style="color:#f59e0b;">${a.suggestedDealStage}</strong></span>` : ''}
+          ${a.dealValueEstimate ? `<span>Value: <strong style="color:#10b981;">${a.dealValueEstimate}</strong></span>` : ''}
+          ${a.sentiment ? `<span>Sentiment: <strong style="color:${a.sentiment==='positive'?'#10b981':a.sentiment==='negative'?'#ef4444':'#f59e0b'}">${a.sentiment}</strong></span>` : ''}
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:600;color:#fff;margin-bottom:10px;">Recommended actions:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;" id="pcActions">
+        ${a.shouldCreateProposal ? `<button class="modal-btn-primary" onclick="runPostCallProposal()" style="width:100%;padding:12px;font-size:13px;text-align:left;">
+          📋 Generate Proposal → Post to #commercial-dealdesk-agent
+        </button>` : ''}
+        ${a.shouldDraftEmail !== false ? `<button class="modal-btn-primary" onclick="runPostCallEmail()" style="width:100%;padding:12px;font-size:13px;text-align:left;background:#1e40af;">
+          ✉️ Draft Follow-up Email (with recording) → Gmail
+        </button>` : ''}
+        ${a.shouldUpdateCrm !== false ? `<button class="modal-btn-primary" onclick="runPostCallCrm()" style="width:100%;padding:12px;font-size:13px;text-align:left;background:rgba(16,185,129,0.2);color:#10b981;">
+          ⚡ Update HubSpot — Log call${a.suggestedDealStage ? ` + move to ${a.suggestedDealStage}` : ''}
+        </button>` : ''}
+        <button class="modal-btn-linkedin" onclick="closeModal();showLinkedInModal(ACTIONS.find(a=>a.id===${itemId}))" style="width:100%;padding:12px;font-size:13px;text-align:left;">
+          💼 Send LinkedIn Connection Request
+        </button>
+        <div style="border-top:1px solid #1e293b;padding-top:8px;margin-top:4px;">
+          <button class="modal-btn-purple" onclick="runPostCallAll()" style="width:100%;padding:12px;font-size:13px;">
+            🚀 Run All — ${[a.shouldCreateProposal ? 'Proposal' : '', a.shouldDraftEmail !== false ? 'Email' : '', a.shouldUpdateCrm !== false ? 'CRM' : '', 'LinkedIn'].filter(Boolean).join(' + ')}
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  addChat("agent", `<strong>Call analyzed — ${s.item.company}</strong><br>${a.summary || ''}`);
+}
+
+// Store pipeline state across steps
+let _postCallState = {};
+
+async function runPostCallAnalysis(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId) || { id: itemId, company: 'Unknown' };
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+
+  const granolaUrl = document.getElementById("pcGranolaUrl")?.value.trim() || '';
+  const contactName = document.getElementById("pcContactName")?.value.trim() || '';
+  const contactEmail = document.getElementById("pcContactEmail")?.value.trim() || '';
+  const granolaNotes = document.getElementById("pcGranolaNotes")?.value.trim() || '';
+
+  if (!granolaNotes) {
+    document.getElementById("pcPipelineStatus").innerHTML = '<div class="modal-error">No call notes found. Paste notes or check Granola API key.</div>';
+    return;
+  }
+
+  _postCallState = { item, deal, granolaUrl, contactName, contactEmail, granolaNotes, itemId };
+
+  // If we already have analysis from Granola fetch, use it
+  if (_postCallState.analysis) {
+    showPostCallAnalysisResult(itemId, _postCallState.analysis);
+    return;
+  }
+
+  document.getElementById("pcPipelineStatus").innerHTML = `<div class="modal-loading"><div class="spin"></div>Analyzing call with AI...</div>`;
+  const btn = document.getElementById("pcAnalyzeBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Analyzing..."; }
+
+  try {
+    const res = await fetch('/api/post-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'analyze',
+        company: item.company,
+        contactName,
+        contactEmail,
+        granolaNotes,
+        granolaUrl,
+        hubspotDealId: deal?.id,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Analysis failed');
+
+    _postCallState.analysis = data.analysis;
+    showPostCallAnalysisResult(itemId, data.analysis);
+  } catch (err) {
+    document.getElementById("pcPipelineStatus").innerHTML = `<div class="modal-error">${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "Retry →"; }
+  }
+}
+
+async function runPostCallProposal() {
+  const s = _postCallState;
+  document.getElementById("pcStep2Status").innerHTML = '<span style="color:#f59e0b;">Running...</span>';
+
+  try {
+    const res = await fetch('/api/post-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'proposal',
+        company: s.item.company,
+        contactName: s.contactName,
+        contactEmail: s.contactEmail,
+        granolaNotes: s.granolaNotes,
+        granolaUrl: s.granolaUrl,
+        hubspotDealId: s.deal?.id,
+        callAnalysis: s.analysis,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    _postCallState.proposal = data.proposal;
+    const posted = data.proposal?.slackPosted;
+    document.getElementById("pcStep2Status").innerHTML = `<span style="color:#10b981;">Done ✓</span>`;
+    addChat("agent", `<strong>&#10003; Proposal generated</strong> — ${s.item.company}${posted ? ' (posted to #dealdesk)' : ''}`);
+  } catch (err) {
+    document.getElementById("pcStep2Status").innerHTML = `<span style="color:#ef4444;">Failed</span>`;
+    addChat("agent", `<span style="color:#ef4444;">Proposal error: ${err.message}</span>`);
+  }
+}
+
+async function runPostCallEmail() {
+  const s = _postCallState;
+  document.getElementById("pcStep3Status").innerHTML = '<span style="color:#f59e0b;">Running...</span>';
+
+  // Open the draft modal with Granola context pre-filled
+  closeModal();
+  showDraftModal(s.item, {
+    granolaUrl: s.granolaUrl,
+    granolaBody: s.granolaNotes,
+    callAnalysis: s.analysis,
+  });
+
+  document.getElementById("pcStep3Status")?.remove; // Modal replaced
+  addChat("agent", `<strong>Drafting email</strong> — ${s.item.company} (with Granola recording)`);
+}
+
+async function runPostCallCrm() {
+  const s = _postCallState;
+  document.getElementById("pcStep4Status").innerHTML = '<span style="color:#f59e0b;">Running...</span>';
+
+  try {
+    const res = await fetch('/api/post-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        step: 'crm',
+        company: s.item.company,
+        contactName: s.contactName,
+        contactEmail: s.contactEmail,
+        granolaNotes: s.granolaNotes,
+        granolaUrl: s.granolaUrl,
+        hubspotDealId: s.deal?.id,
+        callAnalysis: s.analysis,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    document.getElementById("pcStep4Status").innerHTML = `<span style="color:#10b981;">Done ✓</span>`;
+    addChat("agent", `<strong>&#10003; HubSpot updated</strong> — ${s.item.company}${data.crm?.suggestedStage ? ` (suggest → ${data.crm.suggestedStage})` : ''}`);
+  } catch (err) {
+    document.getElementById("pcStep4Status").innerHTML = `<span style="color:#ef4444;">Failed</span>`;
+    addChat("agent", `<span style="color:#ef4444;">CRM error: ${err.message}</span>`);
+  }
+}
+
+async function runPostCallAll() {
+  // Run proposal + CRM in parallel, then open email modal
+  await Promise.all([runPostCallProposal(), runPostCallCrm()]);
+  // LinkedIn
+  const s = _postCallState;
+  if (s.contactName) {
+    fetch('/api/linkedin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactName: s.contactName, company: s.item.company, context: s.analysis?.summary || '' }),
+    }).then(r => r.json()).then(data => {
+      if (data.profileUrl) {
+        window.open(data.profileUrl, '_blank');
+        copyToClipboard(data.message);
+        showToast('LinkedIn opened + message copied');
+      }
+    }).catch(() => {});
+  }
+  // Open email draft last (it replaces the modal)
+  setTimeout(() => runPostCallEmail(), 500);
+}
+
+// ═══════════════════════════════════════
+// 2. GENERATE PROPOSAL — Order form posted to Slack
+// ═══════════════════════════════════════
+async function showProposalModal(item) {
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+
+  showModal(`📋 Generate Proposal — ${item.company}`, `
+    <div class="modal-field">
+      <label class="modal-label">Company</label>
+      <input class="modal-input" id="propCompany" value="${item.company}">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Contact Name</label>
+      <input class="modal-input" id="propContact" value="" placeholder="Contact name">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Contact Email</label>
+      <input class="modal-input" id="propEmail" value="${emailMatch[0] || ''}" placeholder="email@company.com">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Deal Value</label>
+      <input class="modal-input" id="propValue" value="${deal ? deal.amount || '' : item.dealValue || ''}" placeholder="e.g. 120000">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Term</label>
+      <input class="modal-input" id="propTerm" value="12 months">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Notes / Special Terms</label>
+      <textarea class="modal-textarea" id="propNotes" rows="3" placeholder="Discounts, pilot terms, etc."></textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Post to Slack Channel</label>
+      <input class="modal-input" id="propSlackChannel" value="commercial-dealdesk-agent" placeholder="channel name (without #)">
+    </div>
+    <div id="propStatus"></div>`,
+    `<button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="modal-btn-primary" onclick="generateProposal(${item.id})">Generate &amp; Post to Slack</button>`);
+}
+
+async function generateProposal(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const slackChannel = document.getElementById("propSlackChannel").value.trim();
+
+  const payload = {
+    company: document.getElementById("propCompany").value.trim(),
+    contactName: document.getElementById("propContact").value.trim(),
+    contactEmail: document.getElementById("propEmail").value.trim(),
+    dealValue: document.getElementById("propValue").value.trim(),
+    term: document.getElementById("propTerm").value.trim(),
+    notes: document.getElementById("propNotes").value.trim(),
+    hubspotDealId: deal ? deal.id : undefined,
+  };
+
+  document.getElementById("propStatus").innerHTML = '<div class="modal-loading"><div class="spin"></div>Generating order form...</div>';
+
+  try {
+    // Generate the proposal via AI
+    const res = await fetch('/api/proposal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    // Post to Slack channel via our Slack API
+    let slackPosted = false;
+    if (slackChannel && data.orderForm) {
+      try {
+        const slackRes = await fetch('/api/slack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: slackChannel,
+            text: `New order form submitted for *${payload.company}*\n\`\`\`${data.orderForm}\`\`\``,
+          }),
+        });
+        const slackData = await slackRes.json();
+        slackPosted = slackData.success;
+      } catch (e) { /* Slack send failed, show form anyway */ }
+    }
+
+    document.getElementById("propStatus").innerHTML = `
+      <div class="modal-info">${data.orderForm}</div>
+      <div style="margin-top:10px;">
+        ${slackPosted ? `<div class="modal-success">&#10003; Posted to #${slackChannel}</div>` : '<div style="color:#f59e0b;font-size:12px;">Order form generated. Slack post failed or not configured.</div>'}
+      </div>`;
+    document.getElementById("modalFooter").innerHTML = `
+      <button class="modal-btn-secondary" onclick="copyToClipboard(document.querySelector('.modal-info').textContent);showToast('Order form copied')">Copy</button>
+      <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+
+    addChat("agent", `<strong>&#10003; Order form generated</strong> — ${item.company}${slackPosted ? ` (posted to #${slackChannel})` : ''}`);
+  } catch (err) {
+    document.getElementById("propStatus").innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════
+// 3. CRM WIZARD — Summarize Granola notes → Update HubSpot
+// ═══════════════════════════════════════
+async function showCrmWizard(item) {
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const hasGranola = !!item.granola;
+
+  showModal(`⚡ Update CRM — ${item.company}`, `
+    <div style="margin-bottom:16px;font-size:13px;color:#94a3b8;">
+      What would you like to do for <strong style="color:#fff;">${item.company}</strong>?
+    </div>
+
+    ${hasGranola ? `
+    <div class="crm-option" onclick="crmSummarizeCall(${item.id})" id="crmOptSummarize">
+      <div class="crm-option-icon">🎙️</div>
+      <div class="crm-option-text">
+        <div class="crm-option-title">Summarize Call Notes</div>
+        <div class="crm-option-desc">Pull Granola notes, summarize with AI, suggest next steps</div>
+      </div>
+    </div>` : ''}
+
+    <div class="crm-option" onclick="crmUpdateStage(${item.id})" id="crmOptStage">
+      <div class="crm-option-icon">📊</div>
+      <div class="crm-option-text">
+        <div class="crm-option-title">Update Deal Stage</div>
+        <div class="crm-option-desc">${deal ? `Current: ${deal.stage} · ${fmtMoney(deal.amount)}` : 'Move deal to next stage'}</div>
+      </div>
+    </div>
+
+    <div class="crm-option" onclick="crmCreateDeal(${item.id})" id="crmOptCreate">
+      <div class="crm-option-icon">➕</div>
+      <div class="crm-option-text">
+        <div class="crm-option-title">Create New Opportunity</div>
+        <div class="crm-option-desc">Create a new deal in HubSpot for ${item.company}</div>
+      </div>
+    </div>
+
+    <div class="crm-option" onclick="crmAddNote(${item.id})" id="crmOptNote">
+      <div class="crm-option-icon">📝</div>
+      <div class="crm-option-text">
+        <div class="crm-option-title">Add Note</div>
+        <div class="crm-option-desc">Log call notes or activity to the deal</div>
+      </div>
+    </div>
+
+    <div id="crmWizardContent"></div>`,
+    `<button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>`);
+}
+
+async function crmSummarizeCall(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const content = document.getElementById("crmWizardContent");
+
+  content.innerHTML = `
+    <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
+      <div class="modal-field">
+        <label class="modal-label">Paste Granola Call Notes</label>
+        <textarea class="modal-textarea" id="crmGranolaNotes" rows="8" placeholder="Paste your Granola meeting notes here...">${item.granola ? '(Fetching from Granola...)' : ''}</textarea>
+      </div>
+      <button class="modal-btn-primary" onclick="analyzeCrmNotes(${itemId})" style="width:100%;">Analyze Notes with AI</button>
+      <div id="crmAnalysis"></div>
+    </div>`;
+}
+
+async function analyzeCrmNotes(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const notes = document.getElementById("crmGranolaNotes").value.trim();
+  if (!notes) { document.getElementById("crmAnalysis").innerHTML = '<div class="modal-error">Paste notes first.</div>'; return; }
+
+  document.getElementById("crmAnalysis").innerHTML = '<div class="modal-loading"><div class="spin"></div>Analyzing call notes...</div>';
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'summarize_call',
+        granolaNotes: notes,
+        companyName: item.company,
+        dealId: deal?.id,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    const r = data.result;
+    document.getElementById("crmAnalysis").innerHTML = `
+      <div style="margin-top:16px;background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:16px;">
+        <div style="font-size:13px;color:#fff;font-weight:600;margin-bottom:8px;">AI Analysis</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.7;margin-bottom:12px;">${r.summary || ''}</div>
+        ${r.keyPoints?.length ? `<div style="margin-bottom:8px;"><strong style="color:#60a5fa;font-size:11px;">KEY POINTS</strong><ul style="margin:4px 0 0 16px;font-size:12px;color:#cbd5e1;">${r.keyPoints.map(p => `<li>${p}</li>`).join('')}</ul></div>` : ''}
+        ${r.nextSteps?.length ? `<div style="margin-bottom:8px;"><strong style="color:#10b981;font-size:11px;">NEXT STEPS</strong><ul style="margin:4px 0 0 16px;font-size:12px;color:#cbd5e1;">${r.nextSteps.map(p => `<li>${p}</li>`).join('')}</ul></div>` : ''}
+        ${r.suggestedDealStage ? `<div style="margin-bottom:8px;font-size:12px;">Suggested stage: <strong style="color:#f59e0b;">${r.suggestedDealStage}</strong></div>` : ''}
+        ${r.dealValueSignals ? `<div style="font-size:12px;">Value signals: <span style="color:#10b981;">${r.dealValueSignals}</span></div>` : ''}
+        ${r.sentiment ? `<div style="font-size:12px;margin-top:4px;">Sentiment: <span style="color:${r.sentiment==='positive'?'#10b981':r.sentiment==='negative'?'#ef4444':'#f59e0b'}">${r.sentiment}</span></div>` : ''}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        ${r.shouldUpdateStage && deal ? `<button class="modal-btn-primary" onclick="crmDoUpdateStage('${deal.id}','${r.suggestedDealStage}','${item.company}')">Update Stage → ${r.suggestedDealStage}</button>` : ''}
+        ${r.shouldCreateOpportunity && !deal ? `<button class="modal-btn-green" onclick="crmDoCreateDeal('${item.company}')">Create Opportunity</button>` : ''}
+        <button class="modal-btn-secondary" onclick="crmDoAddNote('${deal?.id || ''}','${item.company}', '${encodeURIComponent(r.summary + '\\n\\n' + (r.keyPoints||[]).join('\\n'))}')">Save Note to CRM</button>
+        <button class="modal-btn-linkedin" onclick="closeModal();showLinkedInModal(ACTIONS.find(a=>a.id===${itemId}))">Send LinkedIn Request</button>
+      </div>`;
+
+    addChat("agent", `<strong>Call analyzed — ${item.company}</strong><br>${r.summary || ''}`);
+  } catch (err) {
+    document.getElementById("crmAnalysis").innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+async function crmUpdateStage(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const stages = ["Disco Booked","Disco Complete","Demo Scheduled","Demo Completed","Negotiating","Committed","Closed Won","Closed Lost"];
+  const stageIds = {"Disco Booked":"93124525","Disco Complete":"998751160","Demo Scheduled":"appointmentscheduled","Demo Completed":"123162712","Negotiating":"decisionmakerboughtin","Committed":"227588384","Closed Won":"closedwon","Closed Lost":"closedlost"};
+
+  const content = document.getElementById("crmWizardContent");
+  content.innerHTML = `
+    <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
+      <div class="modal-label">Select New Stage</div>
+      ${stages.map(s => {
+        const isCurrent = deal && deal.stage === s;
+        return `<div class="crm-option ${isCurrent?'selected':''}" onclick="crmDoUpdateStage('${deal?.id || ''}','${stageIds[s]}','${item.company}','${s}')">
+          <div class="crm-option-icon">${isCurrent ? '●' : '○'}</div>
+          <div class="crm-option-text"><div class="crm-option-title">${s}${isCurrent?' (current)':''}</div></div>
+        </div>`;
+      }).join('')}
+      <div id="crmStageStatus"></div>
+    </div>`;
+}
+
+async function crmDoUpdateStage(dealId, stageId, company, stageName) {
+  if (!dealId) { showToast('No deal found — create one first'); return; }
+  const statusEl = document.getElementById("crmStageStatus") || document.getElementById("crmAnalysis");
+  if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Updating HubSpot...</div>';
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_stage', dealId, properties: { dealstage: stageId } }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    if (statusEl) statusEl.innerHTML = `<div class="modal-success" style="margin-top:12px;">&#10003; ${company} updated to ${stageName || stageId}</div>`;
+    addChat("agent", `<strong>&#10003; HubSpot updated</strong> — ${company} → ${stageName || stageId}`);
+
+    // Update local pipeline data
+    const deal = PIPELINE.find(d => String(d.id) === String(dealId));
+    if (deal) { deal.stage = stageName || stageId; renderCurrentTab(); }
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+async function crmCreateDeal(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+
+  const content = document.getElementById("crmWizardContent");
+  content.innerHTML = `
+    <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
+      <div class="modal-field">
+        <label class="modal-label">Deal Name</label>
+        <input class="modal-input" id="crmDealName" value="${item.company}">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Deal Amount</label>
+        <input class="modal-input" id="crmDealAmount" value="${item.dealValue || ''}" placeholder="e.g. 120000">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Stage</label>
+        <select class="modal-input" id="crmDealStage">
+          <option value="93124525">Disco Booked</option>
+          <option value="998751160">Disco Complete</option>
+          <option value="appointmentscheduled">Demo Scheduled</option>
+          <option value="123162712">Demo Completed</option>
+          <option value="decisionmakerboughtin">Negotiating</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Close Date</label>
+        <input class="modal-input" id="crmCloseDate" type="date" value="${new Date(Date.now()+90*86400000).toISOString().split('T')[0]}">
+      </div>
+      <button class="modal-btn-green" onclick="crmDoCreateDeal('${item.company}')" style="width:100%;">Create Deal in HubSpot</button>
+      <div id="crmCreateStatus"></div>
+    </div>`;
+}
+
+async function crmDoCreateDeal(company) {
+  const name = document.getElementById("crmDealName")?.value.trim() || company;
+  const amount = document.getElementById("crmDealAmount")?.value.trim();
+  const stage = document.getElementById("crmDealStage")?.value || '93124525';
+  const closeDate = document.getElementById("crmCloseDate")?.value;
+
+  const statusEl = document.getElementById("crmCreateStatus") || document.getElementById("crmAnalysis");
+  if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Creating deal...</div>';
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_deal',
+        properties: {
+          dealname: name,
+          amount: amount || undefined,
+          dealstage: stage,
+          closedate: closeDate || undefined,
+          hubspot_owner_id: '151853665', // Mike
+        },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    if (statusEl) statusEl.innerHTML = `<div class="modal-success" style="margin-top:12px;">&#10003; Deal created: ${name}</div>`;
+    addChat("agent", `<strong>&#10003; HubSpot deal created</strong> — ${name}`);
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+async function crmAddNote(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+
+  const content = document.getElementById("crmWizardContent");
+  content.innerHTML = `
+    <div style="margin-top:16px;border-top:1px solid #1e293b;padding-top:16px;">
+      <div class="modal-field">
+        <label class="modal-label">Note</label>
+        <textarea class="modal-textarea" id="crmNoteBody" rows="6" placeholder="Enter call notes, meeting summary, or activity...">${item.crmPrompt || ''}</textarea>
+      </div>
+      <button class="modal-btn-primary" onclick="crmDoAddNote('${deal?.id || ''}','${item.company}')" style="width:100%;">Save Note to HubSpot</button>
+      <div id="crmNoteStatus"></div>
+    </div>`;
+}
+
+async function crmDoAddNote(dealId, company, encodedNote) {
+  const noteBody = encodedNote ? decodeURIComponent(encodedNote) : document.getElementById("crmNoteBody")?.value.trim();
+  if (!noteBody) { showToast('Note is empty'); return; }
+
+  const statusEl = document.getElementById("crmNoteStatus") || document.getElementById("crmAnalysis");
+  if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Saving note...</div>';
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'add_note', dealId: dealId || undefined, note: noteBody, companyName: company }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    if (statusEl) statusEl.innerHTML = `<div class="modal-success" style="margin-top:12px;">&#10003; Note saved for ${company}</div>`;
+    addChat("agent", `<strong>&#10003; CRM note saved</strong> — ${company}`);
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════
+// 5. LINKEDIN — Auto connection request after call
+// ═══════════════════════════════════════
+async function showLinkedInModal(item) {
+  if (!item) { addChat("agent", "Select an item first."); return; }
+
+  // Extract contact name from draftPrompt
+  const nameMatch = (item.draftPrompt || '').match(/(?:to|with|email)\s+([A-Z][a-z]+ [A-Z][a-z]+)/i);
+  const contactName = nameMatch ? nameMatch[1] : '';
+
+  showModal(`💼 LinkedIn Connect — ${item.company}`,
+    `<div class="modal-loading"><div class="spin"></div>Generating connection message...</div>`, '');
+
+  try {
+    const res = await fetch('/api/linkedin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contactName: contactName || item.company,
+        company: item.company,
+        context: item.task,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    document.getElementById("modalBody").innerHTML = `
+      <div class="modal-field">
+        <label class="modal-label">Contact</label>
+        <input class="modal-input" id="liName" value="${data.contactName}" placeholder="Contact name">
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Connection Message (300 char max)</label>
+        <textarea class="modal-textarea" id="liMessage" rows="4" maxlength="300">${data.message}</textarea>
+        <div style="text-align:right;font-size:10px;color:#475569;margin-top:3px;"><span id="liCharCount">${data.message.length}</span>/300</div>
+      </div>`;
+
+    document.getElementById("modalContainer").querySelector(".modal").insertAdjacentHTML('beforeend',
+      `<div class="modal-footer">
+        <button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="modal-btn-secondary" onclick="copyToClipboard(document.getElementById('liMessage').value);showToast('Message copied')">Copy Message</button>
+        <button class="modal-btn-linkedin" onclick="window.open('${data.profileUrl}','_blank');copyToClipboard(document.getElementById('liMessage').value);showToast('Message copied — paste in LinkedIn')">Open LinkedIn &amp; Copy</button>
+      </div>`);
+
+    // Character counter
+    setTimeout(() => {
+      const ta = document.getElementById("liMessage");
+      const counter = document.getElementById("liCharCount");
+      if (ta && counter) ta.addEventListener("input", () => { counter.textContent = ta.value.length; });
+    }, 50);
+  } catch (err) {
+    document.getElementById("modalBody").innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════
+// SLACK — Live channel/user list + real sending
+// ═══════════════════════════════════════
+let SLACK_CHANNELS = [];
+let SLACK_USERS = [];
+let _slackLoaded = false;
+
+async function loadSlackTargets() {
+  if (_slackLoaded) return;
+  try {
+    const res = await fetch('/api/slack');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.channels) SLACK_CHANNELS = data.channels;
+    if (data.users) SLACK_USERS = data.users;
+    _slackLoaded = true;
+  } catch (e) { /* Slack not configured */ }
+}
 
 function showSlackMenu(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   if (id) selectedId = id;
   const defaultMsg = generateSlackMsg(a);
-  const channelOpts = SLACK_TARGETS.filter(t => t.type === "channel").map(t =>
-    `<button class="slack-opt" onclick="pickSlackTarget('${t.label}')">${t.label}</button>`).join("");
-  const personOpts = SLACK_TARGETS.filter(t => t.type === "person").map(t =>
-    `<button class="slack-opt" onclick="pickSlackTarget('${t.label}')">@${t.label}</button>`).join("");
-  const area = document.getElementById("contextArea");
-  area.innerHTML = `<div class="context-bar" style="padding:14px 16px;">
-    <div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:8px;">Slack — ${a.company}</div>
-    <div style="margin-bottom:8px;">
-      <div style="font-size:10px;color:#475569;margin-bottom:3px;">To</div>
-      <div id="slackToDisplay" style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box;" onclick="toggleSlackPicker()">
-        <span id="slackToLabel">#sales</span><span style="color:#475569;">▾</span>
+
+  // Load channels dynamically
+  loadSlackTargets().then(() => {
+    const channelOpts = SLACK_CHANNELS.length > 0
+      ? SLACK_CHANNELS.map(c => `<button class="slack-opt" onclick="pickSlackTarget('${c.id}','#${c.name}')">#${c.name}</button>`).join("")
+      : ['team-sales','general','random','team-customer-success','team-data-science','team-marketing'].map(n =>
+          `<button class="slack-opt" onclick="pickSlackTarget('#${n}','#${n}')">#${n}</button>`).join("");
+    const personOpts = SLACK_USERS.length > 0
+      ? SLACK_USERS.slice(0, 30).map(u => `<button class="slack-opt" onclick="pickSlackTarget('${u.id}','@${u.displayName || u.name}')">@${u.displayName || u.name}</button>`).join("")
+      : ['Brian','Will','Jason','Elliot','Ali','Alicia','Nathan'].map(n =>
+          `<button class="slack-opt" onclick="pickSlackTarget('@${n}','@${n}')">@${n}</button>`).join("");
+
+    const defaultChannel = SLACK_CHANNELS.find(c => c.name === 'team-sales');
+    const defaultId = defaultChannel ? defaultChannel.id : '#team-sales';
+    const defaultLabel = '#team-sales';
+
+    const area = document.getElementById("contextArea");
+    area.innerHTML = `<div class="context-bar" style="padding:14px 16px;">
+      <div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:8px;">Slack — ${a.company}</div>
+      <div style="margin-bottom:8px;">
+        <div style="font-size:10px;color:#475569;margin-bottom:3px;">To</div>
+        <div id="slackToDisplay" style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box;" onclick="toggleSlackPicker()">
+          <span id="slackToLabel">${defaultLabel}</span><span style="color:#475569;">▾</span>
+        </div>
+        <input type="hidden" id="slackTo" value="${defaultId}">
+        <div id="slackPicker" style="display:none;background:#0f172a;border:1px solid #334155;border-radius:8px;margin-top:4px;max-height:250px;overflow-y:auto;padding:4px 0;">
+          <div style="padding:4px 10px;"><input class="modal-input" placeholder="Search channels..." oninput="filterSlackPicker(this.value)" style="padding:6px 10px;font-size:12px;"></div>
+          <div id="slackPickerChannels">
+            <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Channels</div>
+            ${channelOpts}
+          </div>
+          <div style="border-top:1px solid #1e293b;margin:4px 0;"></div>
+          <div id="slackPickerUsers">
+            <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">People</div>
+            ${personOpts}
+          </div>
+        </div>
       </div>
-      <input type="hidden" id="slackTo" value="#sales">
-      <div id="slackPicker" style="display:none;background:#0f172a;border:1px solid #334155;border-radius:8px;margin-top:4px;max-height:200px;overflow-y:auto;padding:4px 0;">
-        <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Channels</div>
-        ${channelOpts}
-        <div style="border-top:1px solid #1e293b;margin:4px 0;"></div>
-        <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">People</div>
-        ${personOpts}
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;color:#475569;margin-bottom:3px;">Message</div>
+        <textarea id="slackMsg" rows="4"
+          style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:12px;font-family:inherit;outline:none;resize:vertical;line-height:1.5;box-sizing:border-box;"
+        >${defaultMsg}</textarea>
       </div>
-    </div>
-    <div style="margin-bottom:10px;">
-      <div style="font-size:10px;color:#475569;margin-bottom:3px;">Message</div>
-      <textarea id="slackMsg" rows="4"
-        style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:12px;font-family:inherit;outline:none;resize:vertical;line-height:1.5;box-sizing:border-box;"
-      >${defaultMsg}</textarea>
-    </div>
-    <div style="display:flex;gap:6px;">
-      <button class="ctx-btn" style="background:#4A154B;color:#E8D5E8;flex:1;padding:10px;" onclick="sendSlack(${a.id})">Send to Slack</button>
-      <button class="ctx-btn ctx-secondary" style="flex:0;" onclick="renderContextBar()">Cancel</button>
-    </div>
-  </div>`;
-  setTimeout(() => {
-    const msgInput = document.getElementById("slackMsg");
-    if (msgInput) msgInput.addEventListener("keydown", e => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); sendSlack(id); }});
-  }, 50);
+      <div style="display:flex;gap:6px;">
+        <button class="ctx-btn" style="background:#4A154B;color:#E8D5E8;flex:1;padding:10px;" onclick="sendSlack(${a.id})" id="slackSendBtn">Send to Slack</button>
+        <button class="ctx-btn ctx-secondary" style="flex:0;" onclick="renderContextBar()">Cancel</button>
+      </div>
+      <div id="slackStatus" style="margin-top:6px;"></div>
+    </div>`;
+    setTimeout(() => {
+      const msgInput = document.getElementById("slackMsg");
+      if (msgInput) msgInput.addEventListener("keydown", e => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); sendSlack(id); }});
+    }, 50);
+  });
+}
+
+function filterSlackPicker(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('#slackPickerChannels .slack-opt, #slackPickerUsers .slack-opt').forEach(el => {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
 }
 
 function toggleSlackPicker() {
@@ -484,9 +1566,9 @@ function toggleSlackPicker() {
   if (picker) picker.style.display = picker.style.display === "none" ? "block" : "none";
 }
 
-function pickSlackTarget(val) {
-  document.getElementById("slackTo").value = val;
-  document.getElementById("slackToLabel").textContent = val;
+function pickSlackTarget(id, label) {
+  document.getElementById("slackTo").value = id;
+  document.getElementById("slackToLabel").textContent = label;
   document.getElementById("slackPicker").style.display = "none";
 }
 
@@ -498,92 +1580,186 @@ function generateSlackMsg(a) {
   return lines.join("\n");
 }
 
-function sendSlack(id) {
+async function sendSlack(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
-  const to = document.getElementById("slackTo").value.trim();
+  const target = document.getElementById("slackTo").value.trim();
+  const label = document.getElementById("slackToLabel").textContent.trim();
   const msg = document.getElementById("slackMsg").value.trim();
-  if (!to || !msg) return;
-  const isChannel = to.startsWith("#");
-  const cmd = isChannel
-    ? `Send this Slack message to the ${to} channel:\n\n${msg}`
-    : `Send this Slack DM to ${to}:\n\n${msg}`;
-  copyToClipboard(cmd);
-  addChat("agent", `<strong>Slack → ${to}</strong> — copied. Paste in Cowork.`);
-  renderContextBar();
+  if (!target || !msg) return;
+
+  const btn = document.getElementById("slackSendBtn");
+  const status = document.getElementById("slackStatus");
+  if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+
+  try {
+    const payload = { text: msg };
+    // If target looks like a Slack ID (starts with C or U), use it directly
+    if (target.startsWith('C') || target.startsWith('U')) {
+      payload.channel = target;
+    } else if (target.startsWith('#')) {
+      payload.channel = target.substring(1); // Slack accepts channel name without #
+    } else {
+      payload.channel = target;
+    }
+
+    const res = await fetch('/api/slack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Send failed');
+
+    if (status) status.innerHTML = `<div class="modal-success" style="font-size:12px;">&#10003; Sent to ${label}</div>`;
+    if (btn) { btn.textContent = "Sent ✓"; btn.style.background = "rgba(16,185,129,0.2)"; btn.style.color = "#10b981"; }
+    addChat("agent", `<strong>&#10003; Slack sent</strong> → ${label}<br><span style="color:#64748b;font-size:11px;">${msg.substring(0, 100)}${msg.length > 100 ? '...' : ''}</span>`);
+    setTimeout(() => renderContextBar(), 1500);
+  } catch (err) {
+    if (status) status.innerHTML = `<div class="modal-error">${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "Send to Slack"; }
+  }
 }
 
 // ═══════════════════════════════════════
-// PREP ENGINE
+// 4. PREP NOTES — HubSpot + AI research
 // ═══════════════════════════════════════
-function buildPrep(item) {
+async function buildPrep(item) {
   if (!item) { addChat("agent", "Select an item first."); return; }
   const co = item.company;
-  let prep = `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:14px;font-size:12px;line-height:1.7;">`;
-  prep += `<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;">📋 ${co} — Prep</div>`;
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(co.toLowerCase()));
+  const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+
+  // Show local data immediately
+  let localPrep = `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:14px;font-size:12px;line-height:1.7;">`;
+  localPrep += `<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;">📋 ${co} — Prep</div>`;
 
   if (item.emailSummary) {
-    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#10b981;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Email Thread</div>${item.emailSummary}</div>`;
+    localPrep += `<div class="prep-section"><div class="prep-section-title" style="color:#10b981;">Email Thread</div>${item.emailSummary}</div>`;
   }
 
   const deals = PIPELINE.filter(d => d.name.toLowerCase().includes(co.toLowerCase()));
   if (deals.length > 0) {
-    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">HubSpot Pipeline</div>`;
+    localPrep += `<div class="prep-section"><div class="prep-section-title" style="color:#f59e0b;">HubSpot Pipeline</div>`;
     deals.forEach(d => {
-      prep += `<strong>${d.name}</strong> — ${fmtMoney(d.amount)} · ${d.stage} · ${d.owner||"Unassigned"}`;
-      if (d.close) prep += ` · Close: ${new Date(d.close).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
-      prep += `<br>`;
+      localPrep += `<strong>${d.name}</strong> — ${fmtMoney(d.amount)} · ${d.stage} · ${d.owner||"Unassigned"}`;
+      if (d.close) localPrep += ` · Close: ${new Date(d.close).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+      localPrep += `<br>`;
     });
-    prep += `</div>`;
+    localPrep += `</div>`;
   }
 
   const meetings = MEETINGS.filter(m => m.title.toLowerCase().includes(co.toLowerCase()));
   if (meetings.length > 0) {
-    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#60a5fa;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Meeting History</div>`;
+    localPrep += `<div class="prep-section"><div class="prep-section-title" style="color:#60a5fa;">Meeting History</div>`;
     meetings.forEach(m => {
-      prep += `<strong>${m.date}</strong> — ${m.title} (${m.people})<br>`;
-      if (m.summary) prep += `<span style="color:#94a3b8;">${m.summary}</span><br>`;
+      localPrep += `<strong>${m.date}</strong> — ${m.title} (${m.people})<br>`;
+      if (m.summary) localPrep += `<span style="color:#94a3b8;">${m.summary}</span><br>`;
     });
-    prep += `</div>`;
+    localPrep += `</div>`;
   }
 
-  // Suggested approach
-  prep += `<div style="margin-bottom:8px;"><div style="font-size:11px;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Suggested Approach</div>`;
-  if (item.cat === "inbound" && item.task.match(/intro|warm/i)) {
-    prep += `Build rapport — reference the mutual connection. Ask about their current analytics stack. Position Prescient as the AI-powered MMM that former clients love. Push for demo.`;
-  } else if (item.cat === "inbound" && item.task.match(/M&A|invest/i)) {
-    prep += `Listen mode — understand their thesis. Don't reveal financials. Gauge if exploratory or real. Loop Brian in before next steps.`;
-  } else if (deals.length > 0) {
-    const deal = deals[0];
-    if (deal.stage === "Negotiating") prep += `In negotiation. Know your floor. Have case studies ready. Push for decision timeline.`;
-    else if (deal.stage.includes("Demo")) prep += `Post-demo. Focus on their use case. Address objections. Push toward proposal.`;
-    else if (deal.stage.includes("Disco")) prep += `Early stage. Ask about current MMM/attribution. Understand media mix. Find pain point.`;
-    else prep += `Review deal status and tailor approach.`;
-  } else {
-    prep += `Newer relationship. Focus on understanding needs and finding the right angle.`;
+  localPrep += `<div id="aiPrepContent"><div class="modal-loading"><div class="spin"></div>Loading AI prep brief from HubSpot + web...</div></div>`;
+  localPrep += `</div>`;
+
+  localPrep += `<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">`;
+  localPrep += `<div class="quick-chip" onclick="deepPrep(${item.id})" style="border-color:#10b981;color:#10b981;">Full AI Brief</div>`;
+  localPrep += `<div class="quick-chip" onclick="runAction('linkedin',${item.id})" style="border-color:#0a66c2;color:#60a5fa;">LinkedIn</div>`;
+  if (item.emailUrl) localPrep += `<div class="quick-chip" onclick="window.open('${item.emailUrl}','_blank')">Open in Superhuman</div>`;
+  if (item.granola) localPrep += `<div class="quick-chip" onclick="window.open('${item.granola}','_blank')">Granola Notes</div>`;
+  localPrep += `</div>`;
+
+  addChat("agent", localPrep);
+
+  // Fetch AI prep in background
+  try {
+    const res = await fetch('/api/prep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company: co,
+        contactName: '',
+        contactEmail: emailMatch[0] || '',
+        hubspotDealId: deal?.id,
+      }),
+    });
+    const data = await res.json();
+    const el = document.getElementById("aiPrepContent");
+    if (el && data.success && data.prep?.aiSummary) {
+      el.innerHTML = `<div class="prep-section"><div class="prep-section-title" style="color:#a855f7;">AI Prep Brief</div><div style="white-space:pre-wrap;">${data.prep.aiSummary.replace(/##\s*/g, '<strong style="color:#fff;">').replace(/\n/g, '</strong>\n').replace(/<\/strong>\n<\/strong>/g, '</strong>\n')}</div></div>`;
+    } else if (el) {
+      el.innerHTML = `<div style="color:#475569;font-size:11px;">AI prep unavailable — configure ANTHROPIC_API_KEY for full brief.</div>`;
+    }
+  } catch (err) {
+    const el = document.getElementById("aiPrepContent");
+    if (el) el.innerHTML = `<div style="color:#475569;font-size:11px;">Could not load AI brief.</div>`;
   }
-  prep += `</div></div>`;
-
-  prep += `<div style="display:flex;gap:6px;margin-top:8px;">`;
-  prep += `<div class="quick-chip" onclick="deepPrep(${item.id})" style="border-color:#10b981;color:#10b981;">Go deeper — Clay + Web + Email</div>`;
-  if (item.emailUrl) prep += `<div class="quick-chip" onclick="window.open('${item.emailUrl}','_blank')">Open in Superhuman</div>`;
-  if (item.granola) prep += `<div class="quick-chip" onclick="window.open('${item.granola}','_blank')">Granola Notes</div>`;
-  prep += `</div>`;
-
-  addChat("agent", prep);
 }
 
-function deepPrep(id) {
+async function deepPrep(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
-  const cmd = `Deep prep for my meeting with ${a.company}. Do ALL of the following:\n\n1. CLAY: Search Clay for ${a.company} — pull company size, funding, tech stack, recent news, key decision makers.\n2. EMAIL: Search my Gmail for all threads with ${a.company}. Summarize the full history.\n3. HUBSPOT: Pull the full deal history, activity timeline, and notes for ${a.company}.\n4. WEB: Research ${a.company} — what do they do, how big, recent news, competitors.\n5. GRANOLA: Check Granola for any meeting notes related to ${a.company}.\n\nCompile into a brief I can scan in 60 seconds.`;
-  copyToClipboard(cmd);
-  addChat("agent", `<strong>Deep prep — ${a.company}</strong> — copied. Paste in Cowork.`);
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(a.company.toLowerCase()));
+  const emailMatch = (a.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+
+  showModal(`🧠 Deep Prep — ${a.company}`,
+    `<div class="modal-loading"><div class="spin"></div>Compiling full research brief...</div>`, '');
+
+  try {
+    const res = await fetch('/api/prep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company: a.company,
+        contactName: '',
+        contactEmail: emailMatch[0] || '',
+        hubspotDealId: deal?.id,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+
+    const p = data.prep;
+    let html = '';
+
+    if (p.aiSummary) {
+      html += `<div class="modal-info" style="white-space:pre-wrap;margin-bottom:16px;">${p.aiSummary}</div>`;
+    }
+
+    if (p.hubspot?.properties) {
+      html += `<div class="prep-section"><div class="prep-section-title" style="color:#f59e0b;">HubSpot Deal</div>
+        <div style="font-size:12px;color:#94a3b8;">Stage: ${p.hubspot.properties.dealstage} · Amount: ${p.hubspot.properties.amount || 'N/A'} · Close: ${p.hubspot.properties.closedate || 'N/A'}</div></div>`;
+    }
+
+    if (p.contactInfo?.properties) {
+      const c = p.contactInfo.properties;
+      html += `<div class="prep-section"><div class="prep-section-title" style="color:#60a5fa;">Contact</div>
+        <div style="font-size:12px;color:#94a3b8;">${c.firstname || ''} ${c.lastname || ''} · ${c.jobtitle || ''} · ${c.company || ''}</div>
+        ${p.linkedinUrl ? `<a href="${p.linkedinUrl}" target="_blank" style="font-size:11px;">LinkedIn Profile →</a>` : ''}
+      </div>`;
+    }
+
+    if (p.recentActivity?.length) {
+      html += `<div class="prep-section"><div class="prep-section-title" style="color:#10b981;">Recent Activity</div>`;
+      p.recentActivity.forEach(n => {
+        if (n.properties) html += `<div style="font-size:12px;color:#94a3b8;margin-bottom:6px;border-left:2px solid #1e293b;padding-left:8px;">${n.properties.hs_note_body?.substring(0, 300) || 'Note'}</div>`;
+      });
+      html += `</div>`;
+    }
+
+    document.getElementById("modalBody").innerHTML = html || '<div style="color:#64748b;">No additional data found. Configure API keys for full research.</div>';
+    document.getElementById("modalContainer").querySelector(".modal").insertAdjacentHTML('beforeend',
+      `<div class="modal-footer">
+        <button class="modal-btn-secondary" onclick="closeModal()">Close</button>
+        <button class="modal-btn-linkedin" onclick="closeModal();showLinkedInModal(ACTIONS.find(x=>x.id===${id}))">LinkedIn Connect</button>
+      </div>`);
+  } catch (err) {
+    document.getElementById("modalBody").innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
 }
 
 function quickCmd(cmd) {
-  copyToClipboard(cmd);
-  addChat("agent", `Copied. Paste in Cowork to run.`);
+  addChat("agent", `<span style="color:#64748b;">${cmd}</span>`);
 }
 
 // ═══════════════════════════════════════
@@ -603,8 +1779,26 @@ function sendChat() {
   if (!text) return;
   addChat("user", text); input.value = ""; input.style.height = "40px";
   if (handleLocalCommand(text)) return;
-  copyToClipboard(text);
-  setTimeout(() => addChat("agent", `Copied. Paste in Cowork.`), 300);
+  // Fallback: send to AI for a response
+  addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Thinking...</div>`);
+  fetch('/api/ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: text }),
+  }).then(r => r.json()).then(data => {
+    // Replace the loading message
+    const msgs = document.querySelectorAll('.chat-msg.agent');
+    const last = msgs[msgs.length - 1];
+    if (last && last.innerHTML.includes('Thinking...')) {
+      last.innerHTML = (data.text || 'No response.') + `<div class="ts">${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</div>`;
+    }
+  }).catch(() => {
+    const msgs = document.querySelectorAll('.chat-msg.agent');
+    const last = msgs[msgs.length - 1];
+    if (last && last.innerHTML.includes('Thinking...')) {
+      last.innerHTML = `Try: <strong>draft</strong>, <strong>crm</strong>, <strong>proposal</strong>, <strong>prep</strong>, <strong>linkedin</strong>, or a company name.`;
+    }
+  });
 }
 
 function handleLocalCommand(text) {
@@ -625,12 +1819,7 @@ function handleLocalCommand(text) {
   }
   // Research
   if (t.match(/\b(who (is|are)|look.* up|research|what do we know|tell me (more|about)|background|check (on|this|them))\b/)) {
-    if (sel) {
-      const cmd = `Research ${sel.company} for me. What do they do? How big are they? Key people? Website, LinkedIn, news. Give me a 30-second brief.`;
-      copyToClipboard(cmd);
-      addChat("agent", `<strong>Research ${sel.company}</strong> — copied. Paste in Cowork.`);
-      return true;
-    }
+    if (sel) { buildPrep(sel); return true; }
   }
   // Prep
   if (t.match(/\b(prep|prepare|get ready|talking points|agenda|brief me|meeting prep)\b/)) {
@@ -640,33 +1829,36 @@ function handleLocalCommand(text) {
   if (t.match(/\b(forward|send to brian|delegate|hand off|brian.?s|assign|pass to|have brian|tell brian)\b/)) {
     if (sel) {
       const who = t.match(/brian/) ? "Brian" : t.match(/will/) ? "Will" : t.match(/jason/) ? "Jason" : "the team";
-      const cmd = `Forward the ${sel.company} follow-up to ${who}. Context: ${sel.task}`;
-      copyToClipboard(cmd);
-      addChat("agent", `<strong>Delegate → ${who}</strong> — ${sel.company}. Copied.`);
+      showSlackMenu(sel.id);
+      addChat("agent", `Delegating ${sel.company} → ${who}. Update the Slack message below.`);
       return true;
     }
   }
   // Bump / nudge
   if (t.match(/\b(bump|nudge|ping|poke|follow up again|circle back|touch base|gentle reminder)\b/)) {
     if (sel && sel.draftPrompt) {
-      const cmd = sel.draftPrompt.replace(/Draft a follow-up/, "Draft a gentle bump").replace(/Draft a reply/, "Draft a gentle follow-up") + " Keep it 2-3 sentences max. Light and friendly.";
-      copyToClipboard(cmd);
-      addChat("agent", `<strong>Bump — ${sel.company}</strong> — copied. Paste in Cowork.`);
+      // Modify the draft prompt to be a gentle bump, then open draft modal
+      const origPrompt = sel.draftPrompt;
+      sel._bumpPrompt = origPrompt.replace(/Draft a follow-up/, "Draft a gentle bump").replace(/Draft a reply/, "Draft a gentle follow-up") + " Keep it 2-3 sentences max. Light and friendly.";
+      showDraftModal({ ...sel, draftPrompt: sel._bumpPrompt });
       return true;
     }
   }
   // Create new opportunity / deal
   if (t.match(/\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/)) {
-    if (sel) {
-      const cmd = `Create a new deal/opportunity in HubSpot for ${sel.company}. ${sel.crmPrompt || `Company: ${sel.company}. Task: ${sel.task}. Pull contact details from email and meeting notes.`}`;
-      copyToClipboard(cmd);
-      addChat("agent", `<strong>Create HubSpot deal — ${sel.company}</strong> — copied. Paste in Cowork.`);
-      return true;
-    } else {
-      copyToClipboard(`Create a new deal/opportunity in HubSpot. Ask me for the company name and details, or pull from the most recent email thread.`);
-      addChat("agent", `<strong>Create HubSpot deal</strong> — copied. Paste in Cowork.`);
-      return true;
-    }
+    if (sel) { showCrmWizard(sel); return true; }
+  }
+  // Post-call pipeline
+  if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief)\b/)) {
+    if (sel) { showPostCallFlow(sel); return true; }
+  }
+  // Proposal / order form
+  if (t.match(/\b(order form|contract|proposal|generate proposal)\b/)) {
+    if (sel) { showProposalModal(sel); return true; }
+  }
+  // LinkedIn
+  if (t.match(/\b(linkedin|connect on linkedin|send connection|li request)\b/)) {
+    if (sel) { showLinkedInModal(sel); return true; }
   }
   // Slack
   if (t.match(/\b(slack|share to|post to|send to #|dm |message )\b/)) {
@@ -705,10 +1897,7 @@ function handleLocalCommand(text) {
     const match = findCompanyInText(t);
     if (match) { selectItem(match.id); setTimeout(() => { if(match.crmPrompt) runAction("hubspot"); }, 100); return true; }
   }
-  // Order form
-  if (t.match(/\b(order form|contract|proposal)\b/)) {
-    if (sel) { runAction("order"); return true; }
-  }
+  // (order form handled above with proposal)
   // Start
   if (t.match(/^(start|begin|go|let.?s go|ready|work|run through)/)) { startWork(); return true; }
   // Company name match
@@ -765,6 +1954,19 @@ function showTab(tab) {
   const open = getOpen();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
   document.getElementById("navTodayCount").textContent = open.length;
+  const pipeEl = document.getElementById("navPipeCount");
+  const leadsEl = document.getElementById("navLeadsCount");
+  if (pipeEl) pipeEl.textContent = PIPELINE.length;
+  if (leadsEl) leadsEl.textContent = ACTIONS.length;
+
+  // Sidebar overdue indicator
+  const sidebarOd = document.getElementById("sidebarOverdue");
+  if (sidebarOd && overdue.length > 0) {
+    sidebarOd.innerHTML = `<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:6px;padding:8px 10px;font-size:11px;color:#ef4444;font-weight:600;">${overdue.length} overdue item${overdue.length>1?'s':''}</div>`;
+  } else if (sidebarOd) {
+    sidebarOd.innerHTML = '';
+  }
+
   const main = document.getElementById("main");
 
   if (tab === "today") {
@@ -781,16 +1983,52 @@ function showTab(tab) {
 // ───────────────────────────────────────
 function renderTodayView(main) {
   const open = getOpen();
+  const done = getDone();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
   const upcomingMtgs = MEETINGS.filter(m => m.upcoming);
   const inbound = open.filter(a => a.cat === "inbound");
   const replyNow = open.filter(a => a.cat !== "inbound" && a.cat !== "internal");
   const crmGaps = getCrmGaps();
+  const totalActionable = open.length + done.length;
+  const pctDone = totalActionable > 0 ? Math.round((done.length / totalActionable) * 100) : 0;
 
-  let html = `<h1>Today</h1>`;
-  html += `<div class="subtitle">${open.length} items need your attention`;
-  if (overdue.length > 0) html += ` · <span style="color:#ef4444;">${overdue.length} overdue</span>`;
-  html += ` · ${new Date().toLocaleDateString("en-US", {weekday:"long", month:"short", day:"numeric"})}</div>`;
+  // Determine time of day greeting
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  let html = '';
+
+  // ── HERO SECTION ──
+  if (!selectedId) {
+    html += `<div class="hero">
+      <div class="hero-top">
+        <div class="hero-greeting">${greeting}, Mike</div>
+        <div class="hero-date">${new Date().toLocaleDateString("en-US", {weekday:"long", month:"long", day:"numeric"})}</div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stat"><span class="hero-stat-num blue">${open.length}</span><span class="hero-stat-label">Open</span></div>
+        <div class="hero-stat"><span class="hero-stat-num red">${overdue.length}</span><span class="hero-stat-label">Overdue</span></div>
+        <div class="hero-stat"><span class="hero-stat-num green">${inbound.length}</span><span class="hero-stat-label">Inbound</span></div>
+        <div class="hero-stat"><span class="hero-stat-num yellow">${upcomingMtgs.length}</span><span class="hero-stat-label">Meetings</span></div>
+      </div>
+      ${upcomingMtgs.length > 0 ? `<div class="hero-next-mtg">
+        <div class="dot"></div>
+        <span>Next: <strong>${upcomingMtgs[0].title}</strong> — ${upcomingMtgs[0].date}</span>
+      </div>` : ''}
+      <button class="hero-start-btn" onclick="startWork()">Start My Day <span class="arrow">&rarr;</span></button>
+    </div>`;
+  }
+
+  // ── PROGRESS BAR (show once work has started) ──
+  if (done.length > 0 || selectedId) {
+    html += `<div class="progress-wrap">
+      <div class="progress-header">
+        <span class="progress-label">Today's progress</span>
+        <span class="progress-count">${done.length} of ${totalActionable} handled</span>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pctDone}%"></div></div>
+    </div>`;
+  }
 
   // ── UP NEXT: Meetings ──
   if (upcomingMtgs.length > 0 || inbound.length > 0) {
@@ -817,12 +2055,15 @@ function renderTodayView(main) {
             ${m.action ? `<div class="mtg-action">⚡ ${m.action}</div>` : ""}
             <div class="mtg-btns" style="display:flex;align-items:center;gap:6px;">
               ${m.actionId != null ? `
-                <button class="action-primary" onclick="event.stopPropagation();buildPrep(ACTIONS.find(a=>a.id===${m.actionId}))">🧠 Prep Me</button>
+                <button class="action-primary" onclick="event.stopPropagation();buildPrep(ACTIONS.find(a=>a.id===${m.actionId}))">🧠 Prep</button>
+                <button class="action-primary" style="background:#7c3aed;color:#e9d5ff;border-radius:6px;" onclick="event.stopPropagation();showPostCallFlow(ACTIONS.find(a=>a.id===${m.actionId}))">🎙️ Post-Call</button>
                 <div class="action-group" style="position:relative;">
                   <button class="action-chevron" onclick="event.stopPropagation();toggleDropdown(this)" style="border-radius:6px;">▾</button>
                   <div class="action-dropdown">
-                    ${mtgAction && mtgAction.draftPrompt ? `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${m.actionId})"><span class="dd-icon">✏️</span> Draft Reply</button>` : ''}
+                    ${mtgAction && mtgAction.draftPrompt ? `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${m.actionId})"><span class="dd-icon">✏️</span> Draft Email</button>` : ''}
                     ${mtgAction && mtgAction.crmPrompt ? `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('hubspot',${m.actionId})"><span class="dd-icon">⚡</span> Update CRM</button>` : ''}
+                    <button class="action-dropdown-item" onclick="event.stopPropagation();runAction('proposal',${m.actionId})"><span class="dd-icon">📋</span> Generate Proposal</button>
+                    <button class="action-dropdown-item" onclick="event.stopPropagation();runAction('linkedin',${m.actionId})"><span class="dd-icon">💼</span> LinkedIn Connect</button>
                     <button class="action-dropdown-item" onclick="event.stopPropagation();showSlackMenu(${m.actionId})"><span class="dd-icon">💬</span> Send to Slack</button>
                     ${m.url ? `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${m.url}','_blank')"><span class="dd-icon">📝</span> Meeting Notes</button>` : ''}
                     ${mtgAction && mtgAction.emailUrl ? `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${mtgAction.emailUrl}','_blank')"><span class="dd-icon">📧</span> Open in Superhuman</button>` : ''}
@@ -927,8 +2168,9 @@ function renderTodayView(main) {
 function fixCrmGap(idx) {
   const g = window._crmGaps && window._crmGaps[idx];
   if (!g) return;
-  copyToClipboard(`Update HubSpot for ${g.name}. ${g.fixPrompt}`);
-  addChat("agent", `<strong>Update ${g.name}</strong> — copied. Paste in Cowork.`);
+  // Open CRM wizard for this deal
+  const fakeItem = { id: g.id, company: g.name, crmPrompt: g.fixPrompt, dealValue: g.amount };
+  showCrmWizard(fakeItem);
 }
 
 function getCrmGaps() {
@@ -1113,10 +2355,13 @@ function renderActionItem(a) {
   // Dropdown menu items — pass id directly to avoid selectItem DOM re-render race
   let dropdownItems = "";
   if (!isDone) {
-    if (a.draftPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${a.id})"><span class="dd-icon">✏️</span> Draft Reply</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();showPostCallFlow(ACTIONS.find(x=>x.id===${a.id}))" style="color:#a855f7;font-weight:600;"><span class="dd-icon">🎙️</span> Post-Call Pipeline</button>`;
+    dropdownItems += `<div class="dd-sep"></div>`;
+    if (a.draftPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${a.id})"><span class="dd-icon">✏️</span> Draft Email</button>`;
     if (a.crmPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('hubspot',${a.id})"><span class="dd-icon">⚡</span> Update CRM</button>`;
-    if (a.draftPrompt && a.crmPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('both',${a.id})"><span class="dd-icon">🔄</span> Draft + CRM</button>`;
-    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();buildPrep(ACTIONS.find(x=>x.id===${a.id}))"><span class="dd-icon">🧠</span> Prep Me</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('proposal',${a.id})"><span class="dd-icon">📋</span> Generate Proposal</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();buildPrep(ACTIONS.find(x=>x.id===${a.id}))"><span class="dd-icon">🧠</span> Prep Notes</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('linkedin',${a.id})"><span class="dd-icon">💼</span> LinkedIn Connect</button>`;
     dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();showSlackMenu(${a.id})"><span class="dd-icon">💬</span> Send to Slack</button>`;
     if (a.emailUrl) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${a.emailUrl}','_blank')"><span class="dd-icon">📧</span> Open in Superhuman</button>`;
     if (a.granola) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${a.granola}','_blank')"><span class="dd-icon">📝</span> Meeting Notes</button>`;
@@ -1172,11 +2417,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
   const inboundCount = open.filter(a => a.cat === "inbound").length;
   const upcoming = MEETINGS.filter(m => m.upcoming);
-  let welcome = `<strong>${open.length} items today.</strong>`;
-  if (inboundCount > 0) welcome += ` <span style="color:#10b981;font-weight:700;">${inboundCount} inbound.</span>`;
-  if (overdue.length > 0) welcome += ` <span style="color:#ef4444;">${overdue.length} overdue.</span>`;
-  if (upcoming.length > 0) welcome += `<br>Next meeting: <strong>${upcoming[0].title}</strong> — ${upcoming[0].date}.`;
-  welcome += `<br><br>Click any item or type <strong>start</strong>.`;
+  const hour = new Date().getHours();
+  const timeGreet = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
+
+  let welcome = `<strong>${timeGreet}, Mike.</strong> Here's your day:`;
+  welcome += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0;">`;
+  welcome += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#60a5fa;">${open.length}</div><div style="font-size:10px;color:#64748b;">OPEN</div></div>`;
+  welcome += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#ef4444;">${overdue.length}</div><div style="font-size:10px;color:#64748b;">OVERDUE</div></div>`;
+  welcome += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#10b981;">${inboundCount}</div><div style="font-size:10px;color:#64748b;">INBOUND</div></div>`;
+  welcome += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;text-align:center;"><div style="font-size:18px;font-weight:800;color:#f59e0b;">${upcoming.length}</div><div style="font-size:10px;color:#64748b;">MEETINGS</div></div>`;
+  welcome += `</div>`;
+  if (upcoming.length > 0) welcome += `<div style="font-size:12px;color:#ef4444;margin-bottom:4px;">Next: <strong>${upcoming[0].title}</strong> — ${upcoming[0].date}</div>`;
+  if (overdue.length > 0) welcome += `<div style="font-size:12px;color:#f59e0b;">Top priority: <strong>${overdue[0].company}</strong> — ${overdue[0].task.substring(0, 60)}...</div>`;
+  welcome += `<div style="font-size:11px;color:#475569;margin-top:8px;">Hit <strong>Start My Day</strong> or click any item to begin.</div>`;
   addChat("agent", welcome);
   renderContextBar();
 });
