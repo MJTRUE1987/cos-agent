@@ -1,6 +1,13 @@
-import { kv } from '@vercel/kv';
+let kv = null;
+try {
+  const kvModule = await import('@vercel/kv');
+  kv = kvModule.kv;
+} catch (e) {
+  // KV not configured
+}
 
 export default async function handler(req, res) {
+  if (!kv) return res.status(500).json({ error: 'Vercel KV not configured' });
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -50,14 +57,15 @@ export default async function handler(req, res) {
 
 function upsertById(existing, incoming, key = 'id') {
   const map = new Map(existing.map(item => [item[key], item]));
+  const noKeyItems = [];
   for (const item of incoming) {
     if (item[key] !== undefined) {
       map.set(item[key], { ...map.get(item[key]), ...item });
     } else {
-      existing.push(item); // No key — append
+      noKeyItems.push(item);
     }
   }
-  return Array.from(map.values());
+  return [...Array.from(map.values()), ...noKeyItems];
 }
 
 function upsertByTitle(existing, incoming) {

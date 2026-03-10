@@ -321,7 +321,7 @@
 
 const OWNERS = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", "1003618676": "Jason", "84289936": "Michael O", "82544484": "Jason N" };
 const OWNER_CLASS = { "Mike": "owner-mike", "Brian": "owner-brian", "Will": "owner-will" };
-const TODAY = new Date("2026-03-10");
+const TODAY = new Date();
 
 const STAGE_MAP = {
   "93124525": "Disco Booked", "998751160": "Disco Complete", "appointmentscheduled": "Demo Scheduled",
@@ -998,7 +998,7 @@ async function runPostCallEmail() {
     callAnalysis: s.analysis,
   });
 
-  document.getElementById("pcStep3Status")?.remove; // Modal replaced
+  // Modal is replaced by showDraftModal, so pcStep3Status is gone
   addChat("agent", `<strong>Drafting email</strong> — ${s.item.company} (with Granola recording)`);
 }
 
@@ -1122,27 +1122,13 @@ async function generateProposal(itemId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed');
 
-    // Post to Slack channel via our Slack API
-    let slackPosted = false;
-    if (slackChannel && data.orderForm) {
-      try {
-        const slackRes = await fetch('/api/slack', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            channel: slackChannel,
-            text: `New order form submitted for *${payload.company}*\n\`\`\`${data.orderForm}\`\`\``,
-          }),
-        });
-        const slackData = await slackRes.json();
-        slackPosted = slackData.success;
-      } catch (e) { /* Slack send failed, show form anyway */ }
-    }
+    // /api/proposal already posts to Slack if configured
+    const slackPosted = data.slack?.posted || false;
 
     document.getElementById("propStatus").innerHTML = `
       <div class="modal-info">${data.orderForm}</div>
       <div style="margin-top:10px;">
-        ${slackPosted ? `<div class="modal-success">&#10003; Posted to #${slackChannel}</div>` : '<div style="color:#f59e0b;font-size:12px;">Order form generated. Slack post failed or not configured.</div>'}
+        ${slackPosted ? `<div class="modal-success">&#10003; Posted to #${slackChannel}</div>` : '<div style="color:#f59e0b;font-size:12px;">Order form generated. Slack post not configured — copy and share manually.</div>'}
       </div>`;
     document.getElementById("modalFooter").innerHTML = `
       <button class="modal-btn-secondary" onclick="copyToClipboard(document.querySelector('.modal-info').textContent);showToast('Order form copied')">Copy</button>
@@ -1286,8 +1272,13 @@ async function crmUpdateStage(itemId) {
     </div>`;
 }
 
-async function crmDoUpdateStage(dealId, stageId, company, stageName) {
+const STAGE_IDS = {"Disco Booked":"93124525","Disco Complete":"998751160","Demo Scheduled":"appointmentscheduled","Demo Completed":"123162712","Negotiating":"decisionmakerboughtin","Committed":"227588384","Closed Won":"closedwon","Closed Lost":"closedlost"};
+
+async function crmDoUpdateStage(dealId, stageIdOrName, company, stageName) {
   if (!dealId) { showToast('No deal found — create one first'); return; }
+  // Resolve stage name to ID if needed
+  const stageId = STAGE_IDS[stageIdOrName] || stageIdOrName;
+  if (!stageName) stageName = stageIdOrName;
   const statusEl = document.getElementById("crmStageStatus") || document.getElementById("crmAnalysis");
   if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Updating HubSpot...</div>';
 
@@ -1781,23 +1772,28 @@ function sendChat() {
   if (handleLocalCommand(text)) return;
   // Fallback: send to AI for a response
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Thinking...</div>`);
+  const thinkingIdx = chatHistory.length - 1;
   fetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: text }),
   }).then(r => r.json()).then(data => {
-    // Replace the loading message
-    const msgs = document.querySelectorAll('.chat-msg.agent');
-    const last = msgs[msgs.length - 1];
-    if (last && last.innerHTML.includes('Thinking...')) {
-      last.innerHTML = (data.text || 'No response.') + `<div class="ts">${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</div>`;
+    const ts = new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
+    const responseText = data.text || 'No response.';
+    // Update both chatHistory and DOM
+    if (chatHistory[thinkingIdx]) {
+      chatHistory[thinkingIdx].text = responseText;
+      chatHistory[thinkingIdx].ts = ts;
     }
+    const c = document.getElementById("chatMessages");
+    c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+    c.scrollTop = c.scrollHeight;
   }).catch(() => {
-    const msgs = document.querySelectorAll('.chat-msg.agent');
-    const last = msgs[msgs.length - 1];
-    if (last && last.innerHTML.includes('Thinking...')) {
-      last.innerHTML = `Try: <strong>draft</strong>, <strong>crm</strong>, <strong>proposal</strong>, <strong>prep</strong>, <strong>linkedin</strong>, or a company name.`;
-    }
+    const fallback = `Try: <strong>draft</strong>, <strong>crm</strong>, <strong>proposal</strong>, <strong>prep</strong>, <strong>linkedin</strong>, or a company name.`;
+    if (chatHistory[thinkingIdx]) chatHistory[thinkingIdx].text = fallback;
+    const c = document.getElementById("chatMessages");
+    c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+    c.scrollTop = c.scrollHeight;
   });
 }
 
@@ -2034,8 +2030,10 @@ function renderTodayView(main) {
   if (upcomingMtgs.length > 0 || inbound.length > 0) {
     html += `<div class="section">`;
     if (upcomingMtgs.length > 0) {
-      const todayMtgs = upcomingMtgs.filter(m => m.date && m.date.startsWith("Tue 3/10"));
-      const laterMtgs = upcomingMtgs.filter(m => !m.date || !m.date.startsWith("Tue 3/10"));
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const todayPrefix = `${dayNames[TODAY.getDay()]} ${TODAY.getMonth()+1}/${TODAY.getDate()}`;
+      const todayMtgs = upcomingMtgs.filter(m => m.date && m.date.startsWith(todayPrefix));
+      const laterMtgs = upcomingMtgs.filter(m => !m.date || !m.date.startsWith(todayPrefix));
       const externalToday = todayMtgs.filter(m => m.external);
       const internalToday = todayMtgs.filter(m => !m.external);
 

@@ -60,7 +60,9 @@ export default async function handler(req, res) {
   "suggestedDealStage": "Disco Complete|Demo Scheduled|Demo Completed|Negotiating|Committed",
   "dealValueEstimate": "dollar amount if discussed, or null",
   "sentiment": "positive|neutral|negative",
-  "proposalReady": true/false,
+  "shouldCreateProposal": true/false,
+  "shouldDraftEmail": true/false,
+  "shouldUpdateCrm": true/false,
   "emailTone": "warm followup|technical deep-dive|proposal push|gentle nudge",
   "keyPeople": [{"name": "...", "role": "...", "email": "..."}]
 }
