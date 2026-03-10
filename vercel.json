@@ -15,7 +15,10 @@
     { "source": "/api/intelligence", "destination": "/api/intelligence.js" },
     { "source": "/api/briefing", "destination": "/api/briefing.js" },
     { "source": "/api/sync", "destination": "/api/sync.js" },
-    { "source": "/api/pricing", "destination": "/api/pricing.js" }
+    { "source": "/api/pricing", "destination": "/api/pricing.js" },
+    { "source": "/api/snapshot", "destination": "/api/snapshot.js" },
+    { "source": "/api/end-of-day", "destination": "/api/end-of-day.js" },
+    { "source": "/api/end-of-week", "destination": "/api/end-of-week.js" }
   ],
   "headers": [
     {

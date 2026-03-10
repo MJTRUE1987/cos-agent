@@ -466,6 +466,10 @@ let leadsSearchCursor = 0;
 // Feature caches
 let _briefingCache = null;
 let _intelligenceCache = null;
+let _endOfDayCache = null;
+let _tomorrowPlanCache = null;
+let _endOfWeekCache = null;
+let _nextWeekPlanCache = null;
 let _lastSyncedAt = localStorage.getItem('lastSyncedAt') || null;
 let quickMode = false;
 
@@ -524,6 +528,8 @@ async function syncInBackground() {
     // Clear caches so they regenerate with fresh data
     _briefingCache = null;
     _intelligenceCache = null;
+    _endOfDayCache = null;
+    _endOfWeekCache = null;
 
     // Update UI
     renderCurrentTab();
@@ -691,6 +697,10 @@ async function startMyDay() {
     if (!data.success) throw new Error(data.error || 'Briefing failed');
 
     _briefingCache = data.briefing;
+    // Save daily snapshot for End My Day diff comparison
+    saveDailySnapshot();
+    // Save weekly snapshot on Mondays for End of Week diff
+    if (new Date().getDay() === 1) saveWeeklySnapshot();
     // Replace the loading message
     chatHistory.pop();
     renderBriefing(data.briefing);
@@ -771,6 +781,412 @@ function acceptTriageOrder() {
   });
   renderCurrentTab();
   showToast('Triage order applied');
+}
+
+// ═══════════════════════════════════════
+// END MY DAY
+// ═══════════════════════════════════════
+
+function endWork() { endMyDay(); }
+
+async function saveDailySnapshot() {
+  try {
+    await fetch('/api/snapshot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_daily', pipeline: PIPELINE, actions: ACTIONS }),
+    });
+  } catch {}
+}
+
+async function saveWeeklySnapshot() {
+  try {
+    await fetch('/api/snapshot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_weekly', pipeline: PIPELINE, actions: ACTIONS }),
+    });
+  } catch {}
+}
+
+async function endMyDay() {
+  if (_endOfDayCache) { renderEndOfDay(_endOfDayCache); return; }
+
+  addChat("agent", '<div class="modal-loading" style="padding:0;"><div class="spin"></div>Building your end-of-day recap...</div>');
+
+  // Fetch intelligence + daily diff in parallel
+  let intelligence = _intelligenceCache;
+  let diff = null;
+
+  try {
+    const [intRes, diffRes] = await Promise.all([
+      !intelligence ? fetch('/api/intelligence', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
+      }) : Promise.resolve(null),
+      fetch('/api/snapshot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'diff_daily', pipeline: PIPELINE, actions: ACTIONS }),
+      }),
+    ]);
+
+    if (intRes) {
+      const intData = await intRes.json();
+      if (intData.success) { intelligence = intData.intelligence; _intelligenceCache = intelligence; }
+    }
+    const diffData = await diffRes.json();
+    if (diffData.success) diff = diffData.diff;
+  } catch {}
+
+  try {
+    const res = await fetch('/api/end-of-day', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actions: ACTIONS, meetings: MEETINGS, pipeline: PIPELINE,
+        calendarEvents: CALENDAR_EVENTS, diff, dealIntelligence: intelligence,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'End of day failed');
+
+    _endOfDayCache = data.endOfDay;
+    _tomorrowPlanCache = data.endOfDay.tomorrowOrder;
+    chatHistory.pop();
+    renderEndOfDay(data.endOfDay);
+
+    // Save snapshot for tomorrow's diff
+    saveDailySnapshot();
+  } catch (err) {
+    chatHistory.pop();
+    addChat("agent", `<span style="color:#ef4444;">End of day recap failed: ${err.message}</span>`);
+  }
+}
+
+function renderEndOfDay(eod) {
+  const urgColors = { critical: '#ef4444', high: '#f59e0b', medium: '#60a5fa' };
+  const fmtK = (n) => !n ? '$0' : n >= 1000000 ? '$' + (n/1000000).toFixed(1) + 'M' : '$' + Math.round(n/1000) + 'K';
+
+  let html = `<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;">End of Day Recap</div>`;
+  html += `<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">${eod.summary || ''}</div>`;
+
+  // Metrics bar
+  if (eod.metrics) {
+    const m = eod.metrics;
+    html += `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">`;
+    if (m.actionsHandled) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(16,185,129,0.15);color:#10b981;font-weight:600;">${m.actionsHandled} Handled</span>`;
+    if (m.dealsProgressed) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(96,165,250,0.15);color:#60a5fa;font-weight:600;">${m.dealsProgressed} Progressed</span>`;
+    if (m.closedWonValue) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(16,185,129,0.15);color:#10b981;font-weight:600;">${fmtK(m.closedWonValue)} Won</span>`;
+    if (m.closedLostValue) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#ef4444;font-weight:600;">${fmtK(m.closedLostValue)} Lost</span>`;
+    if (m.openRemaining) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(148,163,184,0.15);color:#94a3b8;font-weight:600;">${m.openRemaining} Open</span>`;
+    html += `</div>`;
+  }
+
+  // Wins
+  if (eod.wins?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Wins</div>`;
+    eod.wins.forEach(w => {
+      html += `<div style="font-size:11px;color:#6ee7b7;margin-bottom:3px;">&#10003; <strong>${w.title}</strong> — ${w.detail}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Deal Changes
+  if (eod.dealChanges?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">Deal Changes Today</div>`;
+    eod.dealChanges.forEach(d => {
+      const sigColor = d.significance === 'high' ? '#f59e0b' : '#94a3b8';
+      html += `<div style="font-size:11px;color:#93c5fd;margin-bottom:3px;"><span style="color:${sigColor};">&#9679;</span> <strong>${d.company}</strong> — ${d.change}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Loose Ends
+  if (eod.looseEnds?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;margin-bottom:4px;">Loose Ends</div>`;
+    eod.looseEnds.forEach(le => {
+      const color = urgColors[le.urgency] || '#94a3b8';
+      html += `<div style="font-size:11px;color:#fcd34d;margin-bottom:3px;"><span style="color:${color};">&#9888;</span> <strong>${le.company}</strong> — ${le.issue}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // CRM Hygiene
+  if (eod.crmHygiene?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#a855f7;text-transform:uppercase;margin-bottom:4px;">CRM Hygiene</div>`;
+    eod.crmHygiene.forEach(c => {
+      html += `<div style="font-size:11px;color:#c084fc;margin-bottom:3px;">&#8226; <strong>${c.company}</strong> — ${c.issue}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Tomorrow Priorities
+  if (eod.tomorrowPriorities?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#22d3ee;text-transform:uppercase;margin-bottom:6px;">Tomorrow's Priorities</div>`;
+    eod.tomorrowPriorities.forEach(p => {
+      const color = urgColors[p.urgency] || '#64748b';
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;cursor:pointer;" onclick="${p.actionId && p.actionId > 0 ? `selectItem(${p.actionId})` : ''}">
+        <span style="font-size:14px;font-weight:800;color:${color};min-width:18px;">${p.rank}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#fff;">${p.company} <span style="font-size:9px;padding:2px 5px;border-radius:3px;background:${color}20;color:${color};">${p.urgency}</span></div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.3;">${p.reason}</div>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Recommendations
+  if (eod.recommendations?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;margin:10px 0 6px;">Recommended Actions</div>`;
+    eod.recommendations.forEach(r => {
+      html += renderRecommendation(r);
+    });
+  }
+
+  // Accept tomorrow plan button
+  html += `<div style="display:flex;gap:6px;margin-top:12px;">
+    <div class="quick-chip" style="border-color:#22d3ee;color:#22d3ee;" onclick="acceptTomorrowPlan()">Accept tomorrow's plan</div>
+    <div class="quick-chip" style="border-color:#334155;color:#94a3b8;" onclick="saveDailySnapshot()">Save snapshot</div>
+  </div>`;
+
+  addChat("agent", html);
+}
+
+function acceptTomorrowPlan() {
+  if (!_tomorrowPlanCache?.length) { showToast('No tomorrow plan available'); return; }
+  const orderMap = new Map(_tomorrowPlanCache.map((id, i) => [id, i]));
+  ACTIONS.sort((a, b) => {
+    const ai = orderMap.has(a.id) ? orderMap.get(a.id) : 9999;
+    const bi = orderMap.has(b.id) ? orderMap.get(b.id) : 9999;
+    return ai - bi;
+  });
+  renderCurrentTab();
+  showToast('Tomorrow\'s priority order applied');
+}
+
+// ═══════════════════════════════════════
+// END OF WEEK
+// ═══════════════════════════════════════
+
+function endWeek() { endOfWeek(); }
+
+async function endOfWeek() {
+  if (_endOfWeekCache) { renderEndOfWeek(_endOfWeekCache); return; }
+
+  addChat("agent", '<div class="modal-loading" style="padding:0;"><div class="spin"></div>Building your weekly recap...</div>');
+
+  let intelligence = _intelligenceCache;
+  let diff = null;
+
+  try {
+    const [intRes, diffRes] = await Promise.all([
+      !intelligence ? fetch('/api/intelligence', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
+      }) : Promise.resolve(null),
+      fetch('/api/snapshot', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'diff_weekly', pipeline: PIPELINE, actions: ACTIONS }),
+      }),
+    ]);
+
+    if (intRes) {
+      const intData = await intRes.json();
+      if (intData.success) { intelligence = intData.intelligence; _intelligenceCache = intelligence; }
+    }
+    const diffData = await diffRes.json();
+    if (diffData.success) diff = diffData.diff;
+  } catch {}
+
+  try {
+    const res = await fetch('/api/end-of-week', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actions: ACTIONS, meetings: MEETINGS, pipeline: PIPELINE,
+        calendarEvents: CALENDAR_EVENTS, diff, dealIntelligence: intelligence,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'End of week failed');
+
+    _endOfWeekCache = data.endOfWeek;
+    _nextWeekPlanCache = data.endOfWeek.nextWeekOrder;
+    chatHistory.pop();
+    renderEndOfWeek(data.endOfWeek);
+
+    // Save weekly snapshot for next week's diff
+    saveWeeklySnapshot();
+  } catch (err) {
+    chatHistory.pop();
+    addChat("agent", `<span style="color:#ef4444;">Weekly recap failed: ${err.message}</span>`);
+  }
+}
+
+function renderEndOfWeek(eow) {
+  const urgColors = { critical: '#ef4444', high: '#f59e0b', medium: '#60a5fa' };
+  const fmtK = (n) => !n ? '$0' : n >= 1000000 ? '$' + (n/1000000).toFixed(1) + 'M' : '$' + Math.round(n/1000) + 'K';
+
+  let html = `<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;">End of Week Recap</div>`;
+  html += `<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">${eow.weeklySummary || ''}</div>`;
+
+  // Metrics bar
+  if (eow.metrics) {
+    const m = eow.metrics;
+    html += `<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">`;
+    if (m.actionsHandledThisWeek) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(16,185,129,0.15);color:#10b981;font-weight:600;">${m.actionsHandledThisWeek} Handled</span>`;
+    if (m.newDealsCount) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(34,211,238,0.15);color:#22d3ee;font-weight:600;">${m.newDealsCount} New Deals</span>`;
+    if (m.dealsProgressed) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(96,165,250,0.15);color:#60a5fa;font-weight:600;">${m.dealsProgressed} Progressed</span>`;
+    if (m.closedWonValue) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(16,185,129,0.15);color:#10b981;font-weight:600;">${fmtK(m.closedWonValue)} Won</span>`;
+    if (m.closedLostValue) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(239,68,68,0.15);color:#ef4444;font-weight:600;">${fmtK(m.closedLostValue)} Lost</span>`;
+    if (m.pipelineHealth) html += `<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(168,85,247,0.15);color:#a855f7;font-weight:600;">Health: ${m.pipelineHealth}/100</span>`;
+    html += `</div>`;
+  }
+
+  // Biggest Wins
+  if (eow.biggestWins?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Biggest Wins</div>`;
+    eow.biggestWins.forEach(w => {
+      html += `<div style="font-size:11px;color:#6ee7b7;margin-bottom:3px;">&#10003; <strong>${w.title}</strong>${w.value ? ` (${fmtK(w.value)})` : ''} — ${w.detail}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // New Deals This Week
+  if (eow.newDeals?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#22d3ee;text-transform:uppercase;margin-bottom:4px;">New Deals This Week</div>`;
+    eow.newDeals.forEach(d => {
+      html += `<div style="font-size:11px;color:#67e8f9;margin-bottom:3px;">+ <strong>${d.company}</strong> — ${d.stage}${d.amount ? ` (${fmtK(d.amount)})` : ''}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Stage Movements
+  if (eow.stageMovements?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#60a5fa;text-transform:uppercase;margin-bottom:4px;">Stage Movements</div>`;
+    eow.stageMovements.forEach(m => {
+      const arrow = m.direction === 'forward' ? '→' : '←';
+      const color = m.direction === 'forward' ? '#60a5fa' : '#f59e0b';
+      html += `<div style="font-size:11px;color:#93c5fd;margin-bottom:3px;"><span style="color:${color};">${arrow}</span> <strong>${m.company}</strong>: ${m.from} → ${m.to}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Closed Won
+  if (eow.closedWon?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Closed Won</div>`;
+    eow.closedWon.forEach(d => {
+      html += `<div style="font-size:11px;color:#6ee7b7;margin-bottom:3px;">&#127881; <strong>${d.company}</strong>${d.amount ? ` — ${fmtK(d.amount)}` : ''}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Closed Lost
+  if (eow.closedLost?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#ef4444;text-transform:uppercase;margin-bottom:4px;">Closed Lost</div>`;
+    eow.closedLost.forEach(d => {
+      html += `<div style="font-size:11px;color:#fca5a5;margin-bottom:3px;">&#10005; <strong>${d.company}</strong>${d.amount ? ` — ${fmtK(d.amount)}` : ''}${d.reason ? ` (${d.reason})` : ''}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Stalled / Risky Deals
+  if (eow.stalledDeals?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;margin-bottom:4px;">Stalled / Risky Deals</div>`;
+    eow.stalledDeals.forEach(d => {
+      html += `<div style="font-size:11px;color:#fcd34d;margin-bottom:3px;">&#9888; <strong>${d.company}</strong> — ${d.stage}${d.daysSinceActivity ? ` (${d.daysSinceActivity}d idle)` : ''} — ${d.risk}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // CRM Hygiene
+  if (eow.crmHygiene?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#a855f7;text-transform:uppercase;margin-bottom:4px;">CRM Hygiene Gaps</div>`;
+    eow.crmHygiene.forEach(c => {
+      html += `<div style="font-size:11px;color:#c084fc;margin-bottom:3px;">&#8226; <strong>${c.company}</strong> — ${c.issue}</div>`;
+    });
+    html += `<div style="margin-bottom:10px;"></div>`;
+  }
+
+  // Next Week Priorities
+  if (eow.nextWeekPriorities?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#22d3ee;text-transform:uppercase;margin-bottom:6px;">Next Week Priorities</div>`;
+    eow.nextWeekPriorities.forEach(p => {
+      const color = urgColors[p.urgency] || '#64748b';
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;cursor:pointer;" onclick="${p.actionId && p.actionId > 0 ? `selectItem(${p.actionId})` : ''}">
+        <span style="font-size:14px;font-weight:800;color:${color};min-width:18px;">${p.rank}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#fff;">${p.company} <span style="font-size:9px;padding:2px 5px;border-radius:3px;background:${color}20;color:${color};">${p.urgency}</span></div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.3;">${p.reason}</div>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Recommendations
+  if (eow.recommendations?.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;margin:10px 0 6px;">Recommended Actions</div>`;
+    eow.recommendations.forEach(r => {
+      html += renderRecommendation(r);
+    });
+  }
+
+  // Action buttons
+  html += `<div style="display:flex;gap:6px;margin-top:12px;">
+    <div class="quick-chip" style="border-color:#22d3ee;color:#22d3ee;" onclick="acceptNextWeekPlan()">Accept next week's plan</div>
+    <div class="quick-chip" style="border-color:#334155;color:#94a3b8;" onclick="saveWeeklySnapshot()">Save weekly snapshot</div>
+  </div>`;
+
+  addChat("agent", html);
+}
+
+function acceptNextWeekPlan() {
+  if (!_nextWeekPlanCache?.length) { showToast('No next week plan available'); return; }
+  const orderMap = new Map(_nextWeekPlanCache.map((id, i) => [id, i]));
+  ACTIONS.sort((a, b) => {
+    const ai = orderMap.has(a.id) ? orderMap.get(a.id) : 9999;
+    const bi = orderMap.has(b.id) ? orderMap.get(b.id) : 9999;
+    return ai - bi;
+  });
+  renderCurrentTab();
+  showToast('Next week\'s priority order applied');
+}
+
+// ═══════════════════════════════════════
+// SHARED: Recommendation Renderer
+// ═══════════════════════════════════════
+
+function renderRecommendation(r) {
+  const prioColors = { high: '#f59e0b', medium: '#60a5fa', low: '#94a3b8' };
+  const color = prioColors[r.priority] || '#94a3b8';
+
+  let chips = '';
+  if (r.actionable && r.actionType) {
+    const chipActions = {
+      'open_crm_editor': { label: 'Open CRM', fn: r.targetId ? `showCrmEditor({id:${r.targetId},company:'${(r.targetCompany||'').replace(/'/g,"\\'")}',task:'',status:'open'})` : null },
+      'preset_deal_stage': { label: r.actionPayload?.stage ? `Set ${r.actionPayload.stage}` : 'Set Stage', fn: r.targetId ? `showCrmEditor({id:${r.targetId},company:'${(r.targetCompany||'').replace(/'/g,"\\'")}',task:'',status:'open'},null,{presetStage:'${r.actionPayload?.stage || ''}'})` : null },
+      'pull_email_thread': { label: 'Pull Emails', fn: `pullEmailThread('${(r.targetCompany||'').replace(/'/g,"\\'")}')` },
+      'pull_call_notes': { label: 'Pull Notes', fn: r.targetCompany ? `fetchGranolaBySearch('${(r.targetCompany||'').replace(/'/g,"\\'")}')` : null },
+      'draft_email_reply': { label: 'Draft Email', fn: r.targetId && r.targetId > 0 ? `selectItem(${r.targetId});setTimeout(()=>runAction('draft'),100)` : null },
+      'draft_follow_up': { label: 'Draft Follow-up', fn: r.targetId && r.targetId > 0 ? `selectItem(${r.targetId});setTimeout(()=>runAction('draft'),100)` : null },
+      'draft_proposal': { label: 'Draft Proposal', fn: r.targetId && r.targetId > 0 ? `selectItem(${r.targetId});setTimeout(()=>showProposalModal(ACTIONS.find(a=>a.id===${r.targetId})),100)` : null },
+      'select_item': { label: 'Select', fn: r.targetId && r.targetId > 0 ? `selectItem(${r.targetId})` : null },
+      'archive_item': { label: 'Archive', fn: r.targetId && r.targetId > 0 ? `archiveItem(${r.targetId})` : null },
+      'accept_tomorrow_plan': { label: 'Accept Plan', fn: 'acceptTomorrowPlan()' },
+      'accept_next_week_plan': { label: 'Accept Plan', fn: 'acceptNextWeekPlan()' },
+    };
+
+    const chipDef = chipActions[r.actionType];
+    if (chipDef?.fn) {
+      chips = `<div style="margin-top:4px;"><button onclick="${chipDef.fn}" style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.3);cursor:pointer;font-weight:600;">${chipDef.label}</button></div>`;
+    }
+  }
+
+  return `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="font-size:12px;font-weight:600;color:#fff;">${r.title}</div>
+      <span style="font-size:9px;padding:2px 5px;border-radius:3px;background:${color}20;color:${color};font-weight:700;flex-shrink:0;">${r.priority}</span>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${r.reason}</div>
+    ${r.targetCompany ? `<div style="font-size:10px;color:#64748b;margin-top:2px;">${r.targetCompany}</div>` : ''}
+    ${chips}
+  </div>`;
 }
 
 // ═══════════════════════════════════════
@@ -1037,6 +1453,10 @@ function renderContextBar() {
   } else {
     area.innerHTML = `<div class="idle-prompt">
       <button class="idle-start-btn" onclick="startWork()">Start My Day &rarr;</button>
+      <div style="display:flex;gap:6px;">
+        <button class="idle-refresh" style="flex:1;" onclick="endMyDay()">End My Day</button>
+        <button class="idle-refresh" style="flex:1;" onclick="endOfWeek()">End of Week</button>
+      </div>
       <button class="idle-refresh" onclick="quickCmd('Pull fresh data from Gmail, HubSpot, and Granola and update my CoS dashboard.')">Refresh data</button>
     </div>`;
   }
@@ -2581,6 +3001,10 @@ const INTENT_PATTERNS = [
   { intent: 'done', pattern: /\b(done|finished|complete|handled|checked off)\b/ },
   // Start day
   { intent: 'start', pattern: /^(start|begin|go|let.?s go|ready|work|run through)/ },
+  // End of day
+  { intent: 'end_day', pattern: /\b(end my day|wrap up.* day|close out today|summarize today|prep tomorrow|what should i finish|log off|logging off|eod|end of day)\b/ },
+  // End of week
+  { intent: 'end_week', pattern: /\b(end of week|wrap up.* week|close out.* week|summarize.* week|prep next week|what happened this week|weekly recap|weekly summary|eow)\b/ },
   // CRM query (read-only — must come before crm_update)
   { intent: 'crm_query', pattern: /\b(deal stage|current stage|what stage|which stage|where.* in.* pipeline|pipeline status|deal status|what.* deal|deal info)\b/ },
   // CRM update (write action — opens editor)
@@ -2836,6 +3260,12 @@ function handleLocalCommand(text) {
 
   // Start — no entity needed
   if (intent === 'start') { startWork(); return true; }
+
+  // End of day — no entity needed
+  if (intent === 'end_day') { endMyDay(); return true; }
+
+  // End of week — no entity needed
+  if (intent === 'end_week') { endOfWeek(); return true; }
 
   // Resolve entity for all other intents
   const { entity, source } = resolveEntity(text);
@@ -3242,6 +3672,10 @@ function renderTodayView(main) {
         <span>Next: <strong>${upcomingMtgs[0].title}</strong> — ${upcomingMtgs[0].date}</span>
       </div>` : ''}
       <button class="hero-start-btn" onclick="startWork()">Start My Day <span class="arrow">&rarr;</span></button>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button onclick="endMyDay()" style="flex:1;padding:8px;border-radius:8px;font-size:11px;font-weight:600;background:rgba(34,211,238,0.1);color:#22d3ee;border:1px solid rgba(34,211,238,0.2);cursor:pointer;">End My Day</button>
+        <button onclick="endOfWeek()" style="flex:1;padding:8px;border-radius:8px;font-size:11px;font-weight:600;background:rgba(168,85,247,0.1);color:#a855f7;border:1px solid rgba(168,85,247,0.2);cursor:pointer;">End of Week</button>
+      </div>
     </div>`;
   }
 
@@ -3708,7 +4142,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   welcome += `</div>`;
   if (upcoming.length > 0) welcome += `<div style="font-size:12px;color:#ef4444;margin-bottom:4px;">Next: <strong>${upcoming[0].title}</strong> — ${upcoming[0].date}</div>`;
   if (overdue.length > 0) welcome += `<div style="font-size:12px;color:#f59e0b;">Top priority: <strong>${overdue[0].company}</strong> — ${overdue[0].task.substring(0, 60)}...</div>`;
-  welcome += `<div style="font-size:11px;color:#475569;margin-top:8px;">Hit <strong>Start My Day</strong> or click any item to begin.</div>`;
+  welcome += `<div style="font-size:11px;color:#475569;margin-top:8px;">Hit <strong>Start My Day</strong> to begin, or <strong>End My Day</strong> / <strong>End of Week</strong> to recap.</div>`;
   addChat("agent", welcome);
   renderContextBar();
 });
