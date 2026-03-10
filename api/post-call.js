@@ -72,7 +72,7 @@ Return ONLY valid JSON.`,
       });
       const aiData = await aiRes.json();
       try {
-        analysis = JSON.parse(aiData.content?.[0]?.text || '{}');
+        analysis = JSON.parse((aiData.content?.[0]?.text || '{}').replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim());
       } catch {
         analysis = { summary: aiData.content?.[0]?.text || '', error: 'Could not parse' };
       }

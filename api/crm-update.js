@@ -217,7 +217,7 @@ Return ONLY valid JSON, no markdown.`,
           }),
         });
         const aiData = await aiRes.json();
-        const analysisText = aiData.content?.[0]?.text || '{}';
+        const analysisText = (aiData.content?.[0]?.text || '{}').replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         try {
           result = JSON.parse(analysisText);
         } catch {

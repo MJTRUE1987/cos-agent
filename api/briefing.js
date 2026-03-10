@@ -108,7 +108,8 @@ Return ONLY valid JSON.`,
     }
 
     const aiData = await aiRes.json();
-    const text = aiData.content?.[0]?.text || '{}';
+    let text = aiData.content?.[0]?.text || '{}';
+    text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
     let briefing;
     try {

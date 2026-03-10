@@ -163,7 +163,8 @@ Return ONLY valid JSON.`,
       });
       const aiData = await aiRes.json();
       try {
-        const parsed = JSON.parse(aiData.content?.[0]?.text || '{}');
+        const rawText = (aiData.content?.[0]?.text || '{}').replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        const parsed = JSON.parse(rawText);
         healthScore = parsed.healthScore;
         aiSummary = parsed.summary;
         if (parsed.topRecommendation) {

@@ -194,7 +194,7 @@ Return ONLY valid JSON array.`,
   const aiData = await aiRes.json();
   let parsed;
   try {
-    parsed = JSON.parse(aiData.content?.[0]?.text || '[]');
+    parsed = JSON.parse((aiData.content?.[0]?.text || '[]').replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim());
   } catch {
     return [];
   }
