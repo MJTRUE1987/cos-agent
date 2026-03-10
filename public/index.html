@@ -430,6 +430,10 @@ let _intelligenceCache = null;
 let _lastSyncedAt = localStorage.getItem('lastSyncedAt') || null;
 let quickMode = false;
 
+// Navigation history for back button
+let _navHistory = [];
+let _navRestoringState = false; // guard to prevent pushes during popstate
+
 // ═══════════════════════════════════════
 // LIVE DATA SYNC (Feature 3)
 // ═══════════════════════════════════════
@@ -777,6 +781,13 @@ function fmtMoney(n) {
 function selectItem(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a || a.status !== "open") return;
+
+  // Push nav state before selecting
+  if (!_navRestoringState) {
+    _navHistory.push({ tab: currentTab, selectedId });
+    history.pushState({ tab: currentTab, selectedId: id }, '', `#${currentTab}/${id}`);
+  }
+
   selectedId = id;
   const days = daysStale(a.lastActivity);
   const urgencyColor = days >= 5 ? '#ef4444' : days >= 3 ? '#f59e0b' : '#10b981';
@@ -857,7 +868,10 @@ function renderContextBar() {
     const dv = sel.dealValue ? ` <span class="deal-val">${fmtMoney(sel.dealValue)}</span>` : "";
     area.innerHTML = `<div class="context-bar">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-        <div class="ctx-selected-label" style="margin:0;">Selected</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="goBack()" style="background:transparent;border:1px solid #334155;color:#94a3b8;font-size:12px;padding:3px 8px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:4px;" onmouseover="this.style.color='#fff';this.style.borderColor='#60a5fa'" onmouseout="this.style.color='#94a3b8';this.style.borderColor='#334155'">&larr; Back</button>
+          <div class="ctx-selected-label" style="margin:0;">Selected</div>
+        </div>
         <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:${quickMode?'#f59e0b':'#475569'};cursor:pointer;">
           <span>Quick Mode</span>
           <input type="checkbox" ${quickMode?'checked':''} onchange="quickMode=this.checked;renderContextBar()" style="accent-color:#f59e0b;">
@@ -887,6 +901,42 @@ function renderContextBar() {
     </div>`;
   }
 }
+
+function goBack() {
+  if (_navHistory.length === 0) {
+    // Fallback: deselect item and show current tab
+    selectedId = null;
+    renderContextBar();
+    renderCurrentTab();
+    return;
+  }
+  const prev = _navHistory.pop();
+  _navRestoringState = true;
+  if (prev.selectedId) {
+    currentTab = prev.tab;
+    selectedId = prev.selectedId;
+    renderContextBar();
+    showTab(prev.tab, true);
+  } else {
+    selectedId = null;
+    renderContextBar();
+    showTab(prev.tab, true);
+  }
+  _navRestoringState = false;
+}
+
+// Browser back button support
+window.addEventListener('popstate', () => {
+  if (_navHistory.length > 0) {
+    const prev = _navHistory.pop();
+    _navRestoringState = true;
+    currentTab = prev.tab;
+    selectedId = prev.selectedId || null;
+    renderContextBar();
+    showTab(prev.tab, true);
+    _navRestoringState = false;
+  }
+});
 
 function startWork() {
   const open = getOpen();
@@ -2281,10 +2331,17 @@ function showToast(msg) {
 // ═══════════════════════════════════════
 let currentTab = "today";
 
-function renderCurrentTab() { showTab(currentTab); }
+function renderCurrentTab() { showTab(currentTab, true); }
 
-function showTab(tab) {
+function showTab(tab, skipHistory) {
+  // Push nav state before changing (unless restoring or re-rendering)
+  if (!skipHistory && !_navRestoringState) {
+    _navHistory.push({ tab: currentTab, selectedId });
+    history.pushState({ tab, selectedId: null }, '', `#${tab}`);
+  }
+
   currentTab = tab;
+  if (!skipHistory) selectedId = null; // deselect when switching tabs
   document.querySelectorAll(".nav-item").forEach((n,i) => n.classList.toggle("active", (tab==="today"&&i===0)||(tab==="pipeline"&&i===1)||(tab==="leads"&&i===2)));
 
   const open = getOpen();
@@ -2574,7 +2631,7 @@ function renderPipelineView(main) {
     html += `<div class="section" style="margin-top:24px;">`;
     html += `<div class="section-header"><span class="section-icon">📋</span><span class="section-title">Meetings Needing Follow-up</span><span class="section-count">${pipelineMeetings.length}</span></div>`;
     pipelineMeetings.forEach(m => {
-      html += `<div class="item" onclick="${m.actionId !== undefined ? `selectItem(${m.actionId});showTab('today')` : ''}" style="cursor:${m.actionId !== undefined ? 'pointer' : 'default'};">
+      html += `<div class="item" onclick="${m.actionId !== undefined ? `selectItem(${m.actionId});showTab('today',true)` : ''}" style="cursor:${m.actionId !== undefined ? 'pointer' : 'default'};">
         <span class="company tag ta" style="width:60px;text-align:center;">${m.date}</span>
         <div class="body">
           <div class="task">${m.title}</div>
@@ -2582,7 +2639,7 @@ function renderPipelineView(main) {
         </div>
         <div class="actions">
           ${m.url ? `<button class="btn-link" onclick="event.stopPropagation();window.open('${m.url}','_blank')">Notes</button>` : ""}
-          ${m.actionId !== undefined ? `<button class="btn-action" onclick="event.stopPropagation();selectItem(${m.actionId});showTab('today')">Work on this</button>` : ""}
+          ${m.actionId !== undefined ? `<button class="btn-action" onclick="event.stopPropagation();selectItem(${m.actionId});showTab('today',true)">Work on this</button>` : ""}
         </div>
       </div>`;
     });
@@ -2613,7 +2670,7 @@ function renderIntelligenceAlerts(intel) {
     const color = sevColors[a.severity] || sevColors.low;
     const bg = sevBg[a.severity] || sevBg.low;
     const label = sevLabels[a.severity] || 'INFO';
-    const clickAction = a.dealId ? `onclick="selectItem(${a.dealId});showTab('today')"` : '';
+    const clickAction = a.dealId ? `onclick="selectItem(${a.dealId});showTab('today',true)"` : '';
     html += `<div ${clickAction} style="background:${bg};border:1px solid ${color}33;border-radius:8px;padding:8px 12px;flex:1 1 calc(50% - 4px);min-width:260px;cursor:${a.dealId ? 'pointer' : 'default'};">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
         <span style="background:${color};color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;">${label}</span>
@@ -2822,7 +2879,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderContextBar();
 });
 
-showTab("today");
+showTab("today", true); // Initial render — no history push
+history.replaceState({ tab: 'today', selectedId: null }, '', '#today');
 </script>
 </body>
 </html>
