@@ -2359,9 +2359,10 @@ function handleLocalCommand(text) {
   }
   // Post-call pipeline / Granola notes
   if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief|pull.*(notes|call|recording)|notes from)\b/)) {
-    const target = sel || findCompanyInText(t);
+    const textMatch = findCompanyInText(t);
+    const target = textMatch || sel; // prefer explicit company mention over current selection
     if (target) {
-      if (!sel) selectItem(target.id);
+      selectItem(target.id);
       showPostCallFlow(target);
       return true;
     }

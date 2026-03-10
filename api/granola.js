@@ -97,7 +97,10 @@ export default async function handler(req, res) {
             const q = company.toLowerCase();
             match = notes.find(n =>
               (n.title || '').toLowerCase().includes(q) ||
-              (n.attendees || []).some(a => (a.name || '').toLowerCase().includes(q))
+              (n.attendees || []).some(a =>
+                (a.name || '').toLowerCase().includes(q) ||
+                (a.email || '').toLowerCase().includes(q)
+              )
             );
           }
           // If no company match, get the most recent note
