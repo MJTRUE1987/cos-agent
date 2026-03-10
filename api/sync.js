@@ -125,22 +125,26 @@ async function syncGmail(sinceDate, summary) {
   if (messages.length === 0) return [];
 
   // Fetch message details (limit to 10 to stay within timeout)
+  // Use format=full to get body text for better classification (intros, warm leads)
   const details = await Promise.all(
     messages.slice(0, 10).map(m =>
-      fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`, { headers })
+      fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, { headers })
         .then(r => r.json())
         .catch(() => null)
     )
   );
 
   const validMessages = details.filter(Boolean).map(msg => {
-    const fromHeader = (msg.payload?.headers || []).find(h => h.name === 'From');
-    const subjectHeader = (msg.payload?.headers || []).find(h => h.name === 'Subject');
+    const getHeader = (name) => (msg.payload?.headers || []).find(h => h.name === name)?.value || '';
+    const bodyText = extractEmailBody(msg.payload);
     return {
       id: msg.id,
-      from: fromHeader?.value || '',
-      subject: subjectHeader?.value || '',
+      from: getHeader('From'),
+      to: getHeader('To'),
+      cc: getHeader('Cc'),
+      subject: getHeader('Subject'),
       snippet: msg.snippet || '',
+      body: bodyText.substring(0, 1500), // cap body for prompt size
       date: msg.internalDate ? new Date(parseInt(msg.internalDate)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     };
   });
@@ -159,8 +163,10 @@ async function syncGmail(sinceDate, summary) {
   if (!anthropicKey) return [];
 
   const emailList = externalMessages.map((m, i) =>
-    `Email ${i + 1}:\nFrom: ${m.from}\nSubject: ${m.subject}\nSnippet: ${m.snippet}`
-  ).join('\n\n');
+    `Email ${i + 1}:\nFrom: ${m.from}\nTo: ${m.to}\nCC: ${m.cc}\nSubject: ${m.subject}\nBody:\n${m.body || m.snippet}`
+  ).join('\n\n---\n\n');
+
+  console.log(`[sync:gmail] Classifying ${externalMessages.length} emails with AI`);
 
   const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -172,12 +178,16 @@ async function syncGmail(sinceDate, summary) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2048,
-      system: `You are a sales ops assistant. Analyze inbound emails and determine which ones warrant action items for the CEO. Return a JSON array:
+      system: `You are a sales ops assistant for Mike True, CEO of Prescient AI. Analyze inbound emails and determine which ones warrant action items. Return a JSON array:
 [
   {
     "emailIndex": 0,
     "isActionable": true/false,
-    "company": "extracted company name",
+    "isIntro": true/false,
+    "company": "target company name (the PROSPECT, not the introducer)",
+    "introducer": "name of person making the intro (if isIntro)",
+    "introducerCompany": "company of the introducer (if isIntro)",
+    "prospects": [{"name": "prospect name", "email": "prospect@co.com", "role": "title if known"}],
     "task": "1-line summary of what needs to happen",
     "category": "inbound|sales|partnerships|strategic",
     "urgency": "high|medium|low",
@@ -185,6 +195,21 @@ async function syncGmail(sinceDate, summary) {
     "crmPrompt": "Brief instruction for CRM logging"
   }
 ]
+
+INTRO EMAIL DETECTION — mark isIntro=true if ANY of these apply:
+- Subject contains "intro", "introduction", "meet", "connect", "introducing"
+- Body says "I want to connect you with", "meet [name]", "introducing you to", "let me introduce", "putting you in touch"
+- Multiple recipients where the sender is making a connection between two parties
+- Someone is vouching for / recommending Prescient to a prospect
+- The email reads as a warm handoff between people
+
+For intro emails:
+- ALWAYS set isActionable=true, urgency="high", category="inbound"
+- Set "company" to the PROSPECT's company (the person being introduced TO Mike), not the introducer's
+- Extract ALL people mentioned with their emails from To/CC/body
+- Set draftPrompt to: "Reply-all to warm intro from [introducer]. Thank [introducer], express excitement to connect with [prospect name] at [company]. Include Calendly link to schedule a call."
+- Set task to: "Warm intro from [introducer] — schedule call with [prospect] at [company]"
+
 Skip newsletters, marketing emails, automated notifications. Focus on real people reaching out about business.
 Return ONLY valid JSON array.`,
       messages: [{ role: 'user', content: emailList }],
@@ -206,7 +231,26 @@ Return ONLY valid JSON array.`,
     const email = externalMessages[p.emailIndex];
     if (!email) return;
 
-    newActions.push({
+    // Collect all email addresses from To/CC for reply-all
+    const allRecipients = [email.from, email.to, email.cc].filter(Boolean).join(', ');
+    const allEmails = allRecipients.match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+    // Remove Mike's own email addresses
+    const externalEmails = allEmails.filter(e => !e.includes('prescientai.com') && !e.includes('prescient.ai'));
+
+    // Build enhanced draft prompt for intros
+    let draftPrompt = p.draftPrompt || `Draft a reply to ${email.from} about: ${email.subject}`;
+    if (p.isIntro) {
+      const prospectEmails = (p.prospects || []).map(pr => pr.email).filter(Boolean);
+      const replyEmails = [...new Set([...externalEmails, ...prospectEmails])];
+      draftPrompt = `INTRO EMAIL — Reply-all to warm intro.\n` +
+        `From: ${email.from}\nTo: ${replyEmails.join(', ')}\nSubject: Re: ${email.subject}\n\n` +
+        `Introducer: ${p.introducer || 'unknown'} (${p.introducerCompany || ''})\n` +
+        `Prospect: ${(p.prospects || []).map(pr => `${pr.name} <${pr.email}>`).join(', ')}\n\n` +
+        `Instructions: Thank ${p.introducer || 'the introducer'} for the connection. Express excitement to connect with the prospect at ${p.company}. ` +
+        `Include Calendly link for "MT Open 30 minutes" to schedule a call. Keep it warm, brief, and professional.`;
+    }
+
+    const action = {
       id: baseId + i,
       cat: p.category || 'inbound',
       company: p.company || 'Unknown',
@@ -215,16 +259,27 @@ Return ONLY valid JSON array.`,
       lastActivity: email.date,
       task: p.task || email.subject,
       meta: `${email.from} | ${email.subject}`,
-      emailSummary: `<strong>From:</strong> ${email.from}<br><strong>Subject:</strong> ${email.subject}<br><br>${email.snippet}`,
+      emailSummary: `<strong>From:</strong> ${email.from}<br><strong>Subject:</strong> ${email.subject}${p.isIntro ? '<br><strong style="color:#10b981;">🤝 Warm Intro</strong>' : ''}<br><br>${email.snippet}`,
       emailUrl: `https://mail.google.com/mail/u/0/#inbox/${email.id}`,
       dealValue: null,
       granola: null,
       hubspot: null,
-      draftPrompt: p.draftPrompt || `Draft a reply to ${email.from} about: ${email.subject}`,
+      draftPrompt,
       crmPrompt: p.crmPrompt || `Log in HubSpot: ${p.company} inbound from ${email.from}`,
-      aiRec: p.urgency === 'high' ? 'Respond ASAP' : 'Review when ready',
+      aiRec: p.isIntro ? 'Warm intro — reply + schedule ASAP' : (p.urgency === 'high' ? 'Respond ASAP' : 'Review when ready'),
       _syncSource: 'gmail',
-    });
+      // Intro-specific metadata
+      isIntro: !!p.isIntro,
+      introducer: p.introducer || null,
+      introducerCompany: p.introducerCompany || null,
+      prospects: p.prospects || [],
+      replyTo: externalEmails,
+      threadId: email.id,
+    };
+
+    console.log(`[sync:gmail] ${p.isIntro ? 'INTRO' : 'email'} classified: company=${p.company}, urgency=${p.urgency}, cat=${p.category}, isIntro=${!!p.isIntro}`);
+
+    newActions.push(action);
     summary.emailsProcessed++;
   });
 
@@ -362,4 +417,47 @@ function upsertByTitle(existing, incoming) {
     }
   }
   return Array.from(map.values());
+}
+
+// Extract plain text body from Gmail message payload (handles multipart)
+function extractEmailBody(payload) {
+  if (!payload) return '';
+
+  // Direct body on the payload
+  if (payload.body?.data) {
+    try {
+      return Buffer.from(payload.body.data, 'base64url').toString('utf-8')
+        .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    } catch { /* fall through */ }
+  }
+
+  // Multipart — recurse into parts, prefer text/plain
+  if (payload.parts) {
+    // Try text/plain first
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body?.data) {
+        try {
+          return Buffer.from(part.body.data, 'base64url').toString('utf-8').trim();
+        } catch { /* continue */ }
+      }
+    }
+    // Fallback to text/html stripped
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/html' && part.body?.data) {
+        try {
+          return Buffer.from(part.body.data, 'base64url').toString('utf-8')
+            .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        } catch { /* continue */ }
+      }
+    }
+    // Recurse into nested multipart
+    for (const part of payload.parts) {
+      if (part.parts) {
+        const nested = extractEmailBody(part);
+        if (nested) return nested;
+      }
+    }
+  }
+
+  return '';
 }

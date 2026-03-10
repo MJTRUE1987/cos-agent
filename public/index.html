@@ -392,6 +392,8 @@ let MEETINGS = [];
 // Live calendar events from Google Calendar
 let CALENDAR_EVENTS = [];
 
+const CALENDLY_LINK = 'https://calendly.com/mike-prescientai/mt-open-30-minutes';
+
 const CAT_CONFIG = {
   inbound: { icon: "&#9679;", label: "Inbound — Act Fast", color: "#10b981" },
   sales: { icon: "&#9679;", label: "Sales Follow-ups", color: "#f59e0b" },
@@ -500,9 +502,9 @@ async function syncInBackground() {
     if (data.newActions?.length) {
       const existingIds = new Set(ACTIONS.map(a => a.id));
       const deduped = data.newActions.filter(a => !existingIds.has(a.id));
-      // Also deduplicate by company name for recently added
+      // Also deduplicate by company name for recently added — but never dedup intros
       const existingCompanies = new Set(ACTIONS.filter(a => a.status === 'open').map(a => a.company.toLowerCase()));
-      const truly = deduped.filter(a => !existingCompanies.has(a.company.toLowerCase()));
+      const truly = deduped.filter(a => a.isIntro || !existingCompanies.has(a.company.toLowerCase()));
       ACTIONS.push(...truly);
     }
     if (data.updatedPipeline?.length) {
@@ -543,7 +545,11 @@ async function syncInBackground() {
 
     if (newEmails > 0) {
       (data.newActions || []).forEach(a => {
-        addFeedItem('email', `<strong>${a.company}</strong> — ${a.task}`, a.id);
+        if (a.isIntro) {
+          addFeedItem('email', `<strong style="color:#10b981;">🤝 WARM INTRO</strong> <strong>${a.company}</strong> — ${a.task}`, a.id);
+        } else {
+          addFeedItem('email', `<strong>${a.company}</strong> — ${a.task}`, a.id);
+        }
       });
     }
     if (newDeals > 0) {
@@ -1350,7 +1356,19 @@ function selectItem(id) {
   const urgencyBadge = `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${urgencyColor}20;color:${urgencyColor};margin-left:6px;">${days}d — ${urgencyLabel}</span>`;
 
   let chatMsg = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><strong style="font-size:14px;">${a.company}</strong>${urgencyBadge}</div>`;
-  if (a.aiRec) chatMsg += `<div style="font-size:11px;color:#a855f7;margin-bottom:8px;">AI: ${a.aiRec}</div>`;
+  if (a.isIntro) {
+    chatMsg += `<div style="font-size:11px;padding:6px 10px;margin-bottom:8px;border-radius:6px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);">`;
+    chatMsg += `<span style="color:#10b981;font-weight:700;">🤝 Warm Intro</span>`;
+    if (a.introducer) chatMsg += ` <span style="color:#94a3b8;">from</span> <strong style="color:#fff;">${a.introducer}</strong>`;
+    if (a.introducerCompany) chatMsg += ` <span style="color:#64748b;">(${a.introducerCompany})</span>`;
+    if (a.prospects?.length) {
+      chatMsg += `<div style="margin-top:4px;color:#94a3b8;font-size:10px;">Prospect: ${a.prospects.map(p => `<strong style="color:#fff;">${p.name}</strong>${p.email ? ` &lt;${p.email}&gt;` : ''}`).join(', ')}</div>`;
+    }
+    chatMsg += `</div>`;
+    chatMsg += `<div style="font-size:11px;color:#f59e0b;margin-bottom:8px;font-weight:600;">⚡ Recommended: Reply with Calendly link to schedule a call</div>`;
+  } else if (a.aiRec) {
+    chatMsg += `<div style="font-size:11px;color:#a855f7;margin-bottom:8px;">AI: ${a.aiRec}</div>`;
+  }
   if (a.emailSummary) {
     chatMsg += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${a.emailSummary}</div>`;
     if (a.emailUrl) chatMsg += `<a href="${a.emailUrl}" target="_blank" style="font-size:11px;">Open in Superhuman &rarr;</a>`;
@@ -1558,18 +1576,35 @@ async function showDraftModal(item, opts = {}) {
   const prompt = item.draftPrompt;
   if (!prompt && !callAnalysis) { addChat("agent", `No draft context for ${item.company}.`); return; }
 
-  // Extract email addresses from draftPrompt
-  const emailMatch = (prompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
-  const toAddr = emailMatch[0] || '';
-  const ccAddrs = emailMatch.slice(1).join(', ') || 'brian@prescientai.com';
+  // Extract email addresses — for intros, use replyTo array; otherwise parse from prompt
+  let toAddr = '';
+  let ccAddrs = 'brian@prescientai.com';
+
+  if (item.isIntro && item.replyTo?.length) {
+    // For intros: reply-all to all external recipients
+    toAddr = item.replyTo.join(', ');
+    ccAddrs = 'brian@prescientai.com';
+    console.log(`[draft] Intro email — reply-all to: ${toAddr}`);
+  } else {
+    const emailMatch = (prompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+    toAddr = emailMatch[0] || '';
+    ccAddrs = emailMatch.slice(1).join(', ') || 'brian@prescientai.com';
+  }
+
   const grLink = granolaUrl || item.granola || '';
 
-  showModal(`✏️ Draft Email — ${item.company}`,
+  showModal(`✏️ Draft Email — ${item.company}${item.isIntro ? ' (Warm Intro Reply)' : ''}`,
     `<div class="modal-loading"><div class="spin"></div>Generating email with AI...</div>`, '');
 
   try {
     // Build enhanced prompt with Granola context if available
     let fullPrompt = prompt || `Draft a follow-up email to ${item.company} after our call.`;
+
+    // For intro emails, always inject Calendly link
+    if (item.isIntro) {
+      fullPrompt += `\n\nCALENDLY LINK (MUST INCLUDE): ${CALENDLY_LINK}\nThis is for "MT Open 30 minutes" — a casual intro call.\nFormat: Include the Calendly link as a clickable HTML anchor. Suggest a few time slots or say "feel free to grab a time that works".`;
+    }
+
     if (callAnalysis) {
       fullPrompt += `\n\nCall Analysis:\nSummary: ${callAnalysis.summary || ''}\nKey Points: ${(callAnalysis.keyPoints || []).join('; ')}\nNext Steps: ${(callAnalysis.nextSteps || []).join('; ')}\nTone: ${callAnalysis.emailTone || 'warm followup'}`;
     }
@@ -1589,7 +1624,12 @@ async function showDraftModal(item, opts = {}) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'AI failed');
 
-    const subjectGuess = item.company + ' — Follow Up';
+    // For intros, extract original subject from meta for Re: threading
+    let subjectGuess = item.company + ' — Follow Up';
+    if (item.isIntro && item.meta) {
+      const origSubject = item.meta.split(' | ').slice(1).join(' | ');
+      if (origSubject) subjectGuess = (origSubject.startsWith('Re:') ? '' : 'Re: ') + origSubject;
+    }
     const emailBody = data.text || '';
 
     document.getElementById("modalBody").innerHTML = `
@@ -1867,6 +1907,12 @@ let _lastActionContext = { item: null, granolaNote: null, analysis: null };
 function renderActionChips(item, extraContext = {}) {
   _lastActionContext = { item, granolaNote: extraContext.granolaNote || null, analysis: extraContext.analysis || null };
   const chips = [];
+
+  // For intro emails, lead with a prominent "Schedule + Reply" chip
+  if (item.isIntro) {
+    chips.push(`<button class="action-chip" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:700;" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">🤝 Reply with Calendly</button>`);
+  }
+
   chips.push(`<button class="action-chip chip-proposal" onclick="showProposalModal(ACTIONS.find(a=>a.id===${item.id}))">📄 Order Form</button>`);
   chips.push(`<button class="action-chip chip-hubspot" onclick="showCrmEditor(ACTIONS.find(a=>a.id===${item.id}), _lastActionContext.analysis)">⚡ HubSpot</button>`);
   chips.push(`<button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}), {callAnalysis: _lastActionContext.analysis, granolaBody: _lastActionContext.granolaNote?.summaryText||''})">✏️ Draft Email</button>`);
@@ -3641,7 +3687,27 @@ function renderTodayView(main) {
   const open = getOpen();
   const done = getDone();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
-  const upcomingMtgs = MEETINGS.filter(m => m.upcoming);
+  const now = new Date();
+  const upcomingMtgs = MEETINGS.filter(m => {
+    if (!m.upcoming) return false;
+    // Parse meeting date/time to filter out past meetings
+    if (m.calendarEvent?.start) {
+      return new Date(m.calendarEvent.start) > now;
+    }
+    // Fallback: check if date string contains today's date and a time
+    if (m.date) {
+      const match = m.date.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+      if (match) {
+        let h = parseInt(match[1]);
+        const min = parseInt(match[2]);
+        if (match[3].toLowerCase() === 'pm' && h !== 12) h += 12;
+        if (match[3].toLowerCase() === 'am' && h === 12) h = 0;
+        const mtgTime = new Date(now); mtgTime.setHours(h, min, 0, 0);
+        return mtgTime > now;
+      }
+    }
+    return true; // keep if we can't parse time
+  });
   const inbound = open.filter(a => a.cat === "inbound");
   const replyNow = open.filter(a => a.cat !== "inbound" && a.cat !== "internal");
   const crmGaps = getCrmGaps();
@@ -4007,6 +4073,7 @@ function renderLeadsView(main) {
     const badge = !isDone ? staleBadge(days) : "";
     const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
     const catCfg = CAT_CONFIG[a.cat];
+    const introBadge = a.isIntro ? `<span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:1px 6px;border-radius:3px;">🤝 intro</span> ` : '';
     const catBadge = catCfg ? `<span style="font-size:9px;font-weight:600;color:${catCfg.color};background:${catCfg.color}20;padding:1px 6px;border-radius:3px;">${a.cat}</span>` : "";
     const aiRec = a.aiRec ? `<span class="ai-badge">AI: ${a.aiRec}</span>` : "";
 
@@ -4014,7 +4081,7 @@ function renderLeadsView(main) {
       <span class="company tag ${a.color}">${a.company}</span>
       <div class="body">
         <div class="task">${a.task}</div>
-        <div class="meta">${catBadge} ${a.meta||""} ${badge} ${dv}</div>
+        <div class="meta">${introBadge}${catBadge} ${a.meta||""} ${badge} ${dv}</div>
         ${aiRec ? `<div style="margin-top:4px;">${aiRec}</div>` : ""}
       </div>
       <div class="actions">
@@ -4047,7 +4114,11 @@ function renderActionItem(a) {
   let primaryBtn = "";
   let primaryClass = "";
   if (!isDone) {
-    if (a.draftPrompt && a.crmPrompt) {
+    if (a.isIntro) {
+      // Intros get a prominent "Reply with Calendly" button
+      primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();runAction('draft',${a.id})" style="background:#10b981;color:#fff;">🤝 Reply</button>`;
+      primaryClass = "green";
+    } else if (a.draftPrompt && a.crmPrompt) {
       primaryBtn = `<button class="action-primary" onclick="event.stopPropagation();runAction('draft',${a.id})">✏️ Draft</button>`;
       primaryClass = "";
     } else if (a.draftPrompt) {
@@ -4081,11 +4152,13 @@ function renderActionItem(a) {
     dropdownItems += `<button class="action-dropdown-item danger" onclick="event.stopPropagation();archiveItem(${a.id})"><span class="dd-icon">✕</span> Archive</button>`;
   }
 
+  const introTag = a.isIntro ? `<span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:1px 6px;border-radius:3px;">🤝 intro</span> ` : '';
+
   return `<div class="item ${isDone?'done-item':''} ${isSel?'selected':''}" onclick="${isDone?'':`selectItem(${a.id})`}">
     <span class="company tag ${a.color}">${a.company}</span>
     <div class="body">
       <div class="task">${a.task}</div>
-      <div class="meta">${a.meta||""} ${badge} ${dv}</div>
+      <div class="meta">${introTag}${a.meta||""} ${badge} ${dv}</div>
       ${aiRec ? `<div style="margin-top:4px;">${aiRec}</div>` : ""}
     </div>
     ${isDone ? '<div class="actions"><span class="tag tg">&#10003;</span></div>' : `
