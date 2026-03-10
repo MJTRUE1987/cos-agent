@@ -2357,9 +2357,20 @@ function handleLocalCommand(text) {
   if (t.match(/\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/)) {
     if (sel) { showCrmWizard(sel); return true; }
   }
-  // Post-call pipeline
-  if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief)\b/)) {
-    if (sel) { showPostCallFlow(sel); return true; }
+  // Post-call pipeline / Granola notes
+  if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief|pull.*(notes|call|recording)|notes from)\b/)) {
+    const target = sel || findCompanyInText(t);
+    if (target) {
+      if (!sel) selectItem(target.id);
+      showPostCallFlow(target);
+      return true;
+    }
+    // No company match — search Granola directly by keyword
+    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please)\b/g, '').trim();
+    if (keyword) {
+      fetchGranolaBySearch(keyword);
+      return true;
+    }
   }
   // Proposal / order form
   if (t.match(/\b(order form|contract|proposal|generate proposal)\b/)) {
@@ -2419,6 +2430,40 @@ function handleLocalCommand(text) {
 function findCompanyInText(text) {
   const t = text.toLowerCase();
   return ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+}
+
+async function fetchGranolaBySearch(keyword) {
+  addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Searching Granola for "${keyword}"...</div>`);
+  const searchIdx = chatHistory.length - 1;
+  try {
+    const res = await fetch('/api/granola', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: keyword, analyze: false }),
+    });
+    const data = await res.json();
+    if (data.success && data.note) {
+      const n = data.note;
+      const attendees = (n.attendees || []).map(a => a.name || a.email).join(', ');
+      let html = `<div style="margin-bottom:8px;"><strong>${n.title}</strong></div>`;
+      html += `<div style="font-size:11px;color:#64748b;margin-bottom:8px;">${new Date(n.createdAt).toLocaleDateString()} · ${attendees}</div>`;
+      if (n.summaryText) html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.6;color:#94a3b8;max-height:300px;overflow-y:auto;white-space:pre-wrap;">${n.summaryMarkdown || n.summaryText}</div>`;
+      else html += `<div style="color:#475569;font-size:12px;">No summary available.</div>`;
+      // Link to open post-call flow if there's a matching action
+      const match = ACTIONS.find(a => a.status === 'open' && (a.company.toLowerCase().includes(keyword.toLowerCase()) || keyword.toLowerCase().includes(a.company.toLowerCase())));
+      if (match) {
+        html += `<div style="margin-top:8px;"><button class="btn-action" onclick="selectItem(${match.id});showPostCallFlow(ACTIONS.find(a=>a.id===${match.id}))">Run Post-Call for ${match.company} &rarr;</button></div>`;
+      }
+      chatHistory[searchIdx] = { role: 'agent', text: html, ts: new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) };
+    } else {
+      chatHistory[searchIdx] = { role: 'agent', text: `No Granola notes found for "${keyword}".`, ts: new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) };
+    }
+  } catch {
+    chatHistory[searchIdx] = { role: 'agent', text: `Could not reach Granola. Check API key.`, ts: new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) };
+  }
+  const c = document.getElementById("chatMessages");
+  c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+  c.scrollTop = c.scrollHeight;
 }
 
 function copyToClipboard(text) {
