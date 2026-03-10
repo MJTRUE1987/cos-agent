@@ -2561,244 +2561,238 @@ function sendChat() {
   });
 }
 
-function handleLocalCommand(text) {
-  const t = text.toLowerCase();
-  const sel = getSelected();
+// ═══════════════════════════════════════════════════════════════════
+// INTENT-BASED COMMAND ROUTER
+// ═══════════════════════════════════════════════════════════════════
+const DEBUG_ROUTER = false; // Set to true to enable command routing debug logs in console
 
-  // Confirmed / on calendar
-  if (t.match(/\b(on my calendar|scheduled|confirmed|already booked|meeting.?s? (set|booked|confirmed)|it.?s on|booked it)\b/)) {
-    if (sel) { addChat("agent", `✓ ${sel.company} — on calendar.`); markDone(sel.id); return true; }
-  }
-  // Already replied
-  if (t.match(/\b(already (replied|responded|emailed|sent)|i (replied|responded|sent)|wrote them|emailed them|sent (it|that|the email))\b/)) {
-    if (sel) { addChat("agent", `✓ ${sel.company} — already handled.`); markDone(sel.id); return true; }
-  }
-  // Not interested
-  if (t.match(/\b(not interested|pass on|not a fit|not for us|too early|not now|waste of time|spam|junk)\b/)) {
-    if (sel) { addChat("agent", `✕ ${sel.company} — not a fit.`); archiveItem(sel.id); return true; }
-  }
-  // Deal stage / deal info queries
-  if (t.match(/\b(deal stage|current stage|what stage|which stage|where.* in.* pipeline|pipeline status|deal status)\b/)) {
-    let target = sel || findCompanyInText(t);
-    // Fall back to last-mentioned company
-    if (!target && _lastMentionedCompany) {
-      target = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany)
-        || { id: -1, company: _lastMentionedCompany, task: '', status: 'open' };
-    }
-    if (target) {
-      const deals = PIPELINE.filter(d => d.name.toLowerCase().includes(target.company.toLowerCase()));
-      if (deals.length > 0) {
-        let html = `<strong>${target.company} — Pipeline</strong>`;
-        deals.forEach(d => {
-          const stageLabel = STAGE_MAP[d.dealstage] || d.stage || 'Unknown';
-          html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:6px 0;font-size:12px;line-height:1.6;">`;
-          html += `<div><strong style="color:#fff;">${d.name}</strong> — <span style="color:#f59e0b;">${stageLabel}</span></div>`;
-          html += `<div style="color:#94a3b8;">${fmtMoney(d.amount)} · ${d.owner || 'Unassigned'}${d.close ? ' · Close: ' + new Date(d.close).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>`;
-          html += `</div>`;
-        });
-        html += renderActionChips(target);
-        addChat("agent", html);
-        return true;
-      }
-      addChat("agent", `No HubSpot deals found for ${target.company}.` + renderActionChips(target));
-      return true;
-    }
-    // Search pipeline directly
-    const deal = findDealInText(t);
-    if (deal) {
-      const stageLabel = STAGE_MAP[deal.dealstage] || deal.stage || 'Unknown';
-      addChat("agent", `<strong>${deal.name}</strong> — <span style="color:#f59e0b;">${stageLabel}</span><br><span style="color:#94a3b8;">${fmtMoney(deal.amount)} · ${deal.owner || 'Unassigned'}${deal.close ? ' · Close: ' + new Date(deal.close).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</span>`);
-      return true;
-    }
-  }
-  // Research
-  if (t.match(/\b(who (is|are)|look.* up|research|what do we know|tell me (more|about)|background|check (on|this|them))\b/)) {
-    if (sel) { buildPrep(sel); return true; }
-  }
-  // Prep
-  if (t.match(/\b(prep|prepare|get ready|talking points|agenda|brief me|meeting prep)\b/)) {
-    if (sel) { buildPrep(sel); return true; }
-  }
-  // Delegate
-  if (t.match(/\b(forward|send to brian|delegate|hand off|brian.?s|assign|pass to|have brian|tell brian)\b/)) {
-    if (sel) {
-      const who = t.match(/brian/) ? "Brian" : t.match(/will/) ? "Will" : t.match(/jason/) ? "Jason" : "the team";
-      showSlackMenu(sel.id);
-      addChat("agent", `Delegating ${sel.company} → ${who}. Update the Slack message below.`);
-      return true;
-    }
-  }
+// State for entity tracking
+let _lastEntitySource = null;
+let _lastResolvedIntent = null;
+
+// Canonical intent patterns — checked in priority order
+const INTENT_PATTERNS = [
+  // Status dispositions (highest priority)
+  { intent: 'confirmed', pattern: /\b(on my calendar|scheduled|confirmed|already booked|meeting.?s? (set|booked|confirmed)|it.?s on|booked it)\b/ },
+  { intent: 'already_done', pattern: /\b(already (replied|responded|emailed|sent)|i (replied|responded|sent)|wrote them|emailed them|sent (it|that|the email))\b/ },
+  { intent: 'not_interested', pattern: /\b(not interested|pass on|not a fit|not for us|too early|not now|waste of time|spam|junk)\b/ },
+  { intent: 'archive', pattern: /\b(archive|dismiss|remove|kill it|nah|drop it|forget it|trash)\b/ },
+  { intent: 'skip', pattern: /\b(skip|next|move on|pass|later|come back|tomorrow|no action)\b/ },
+  { intent: 'done', pattern: /\b(done|finished|complete|handled|checked off)\b/ },
+  // Start day
+  { intent: 'start', pattern: /^(start|begin|go|let.?s go|ready|work|run through)/ },
+  // CRM query (read-only — must come before crm_update)
+  { intent: 'crm_query', pattern: /\b(deal stage|current stage|what stage|which stage|where.* in.* pipeline|pipeline status|deal status|what.* deal|deal info)\b/ },
+  // CRM update (write action — opens editor)
+  { intent: 'crm_update', pattern: /\b(update.*(?:hubspot|crm|hub)|(?:hubspot|crm).*update|change.*(?:hubspot|crm)|(?:hubspot|crm).*change|modify.*(?:hubspot|crm)|edit.*(?:hubspot|crm)|log.*(?:hubspot|crm|in crm)|(?:hubspot|crm).*edit|update deal|update stage)\b/ },
+  // CRM update via stage language — "move X to closed lost", "mark X as committed", "close lost X"
+  { intent: 'crm_update', pattern: /\b(move|change|set|mark)\b.*\b(to|as)\s+(closed?\s*(lost|won)|negotiat|commit|demo|disco|nurture|booking)\b/i },
+  { intent: 'crm_update', pattern: /\bclose[d]?\s*(lost|won)\b/i },
+  // CRM create (new deal)
+  { intent: 'crm_create', pattern: /\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/ },
+  // Post-call / Granola notes
+  { intent: 'postcall', pattern: /\b(post.?call|after.?call|granola|call notes|recording|debrief|pull.*(notes|call|recording)|notes from)\b/ },
+  // Proposal / pricing
+  { intent: 'proposal', pattern: /\b(order form|contract|proposal|generate proposal)\b/ },
+  { intent: 'pricing', pattern: /\b(pricing|price|quote)\b/ },
+  // Draft email
+  { intent: 'draft', pattern: /\b(draft|email|write an? email|send an? email|reply|compose|follow.?up email)\b/ },
   // Bump / nudge
-  if (t.match(/\b(bump|nudge|ping|poke|follow up again|circle back|touch base|gentle reminder)\b/)) {
-    if (sel && sel.draftPrompt) {
-      // Modify the draft prompt to be a gentle bump, then open draft modal
-      const origPrompt = sel.draftPrompt;
-      sel._bumpPrompt = origPrompt.replace(/Draft a follow-up/, "Draft a gentle bump").replace(/Draft a reply/, "Draft a gentle follow-up") + " Keep it 2-3 sentences max. Light and friendly.";
-      showDraftModal({ ...sel, draftPrompt: sel._bumpPrompt });
-      return true;
-    }
-  }
-  // Create new opportunity / deal
-  if (t.match(/\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/)) {
-    if (sel) { showCrmWizard(sel); return true; }
-  }
-  // Post-call pipeline / Granola notes — supports chained commands
-  // e.g. "Pull my call notes from Ariat today. Draft up a quote and update HubSpot."
-  if (t.match(/\b(post.?call|after.?call|granola|call notes|recording|debrief|pull.*(notes|call|recording)|notes from)\b/)) {
-    const textMatch = findCompanyInText(t);
-    const target = textMatch || sel;
-    if (target) {
-      selectItem(target.id);
-      // Detect chained actions in the same message
-      const wantsQuote = t.match(/\b(quote|proposal|order form|contract|pricing)\b/);
-      const wantsCrm = t.match(/\b(hubspot|crm|update hubspot|log|update crm)\b/);
-      const wantsDraft = t.match(/\b(draft|email|follow.?up|write|send|reply)\b/) && !wantsQuote;
-      if (wantsQuote || wantsCrm || wantsDraft) {
-        // Run chained post-call pipeline in chat (no modal)
-        runChainedPostCall(target, { quote: !!wantsQuote, crm: !!wantsCrm, draft: !!wantsDraft });
-        return true;
-      }
-      showPostCallFlow(target);
-      return true;
-    }
-    // No company match — search Granola directly by keyword
-    // If "them"/"they" used, resolve to last-mentioned company
-    if (_lastMentionedCompany && t.match(/\b(them|they|their|it|this one|that one|same)\b/)) {
-      const resolved = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
-      if (resolved) { selectItem(resolved.id); showPostCallFlow(resolved); return true; }
-      // Not in ACTIONS but we know the company — search Granola by name
-      fetchGranolaBySearch(_lastMentionedCompany);
-      return true;
-    }
-    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please|today|add|last|with|them|their|it)\b/g, '').replace(/\s+/g, ' ').trim();
-    if (keyword && keyword.length > 2) {
-      fetchGranolaBySearch(keyword);
-      return true;
-    }
-    // Fallback: if nothing to search, use last-mentioned company
-    if (_lastMentionedCompany) {
-      fetchGranolaBySearch(_lastMentionedCompany);
-      return true;
-    }
-  }
-  // Proposal / order form / pricing — with inline deal details detection
-  if (t.match(/\b(order form|contract|proposal|generate proposal|pricing|price|quote)\b/)) {
-    // Try to parse inline deal details (brand, spend, channels)
-    const parsed = parsePricingFromChat(text);
-    if (parsed) {
-      runChatPricing(parsed);
-      return true;
-    }
-    if (sel) { showProposalModal(sel); return true; }
-    const match = findCompanyInText(t);
-    if (match) { selectItem(match.id); setTimeout(() => showProposalModal(match), 100); return true; }
-    // No match — check if follow-up message has deal details
-    // (will fall through to AI, which is fine)
-  }
+  { intent: 'bump', pattern: /\b(bump|nudge|ping|poke|follow up again|circle back|touch base|gentle reminder)\b/ },
+  // Prep / research
+  { intent: 'prep', pattern: /\b(prep|prepare|get ready|talking points|agenda|brief me|meeting prep)\b/ },
+  { intent: 'research', pattern: /\b(who (is|are)|look.* up|research|what do we know|tell me (more|about)|background|check (on|this|them))\b/ },
   // LinkedIn
-  if (t.match(/\b(linkedin|connect on linkedin|send connection|li request)\b/)) {
-    if (sel) { showLinkedInModal(sel); return true; }
-  }
+  { intent: 'linkedin', pattern: /\b(linkedin|connect on linkedin|send connection|li request)\b/ },
   // Slack
-  if (t.match(/\b(slack|share to|post to|send to #|dm |message )\b/)) {
-    if (sel) {
-      showSlackMenu(sel.id);
-      setTimeout(() => {
-        const toInput = document.getElementById("slackTo");
-        if (!toInput) return;
-        const ch = t.match(/#(\w+)/);
-        const per = t.match(/\b(brian|will|jason|elliot|ali)\b/i);
-        if (ch) toInput.value = "#" + ch[1];
-        else if (per) toInput.value = per[1].charAt(0).toUpperCase() + per[1].slice(1).toLowerCase();
-      }, 100);
-      return true;
-    }
-  }
-  // Archive
-  if (t.match(/\b(archive|dismiss|remove|kill it|nah|drop it|forget it|trash)\b/)) {
-    if (sel) { archiveItem(sel.id); return true; }
-  }
-  // Skip
-  if (t.match(/\b(skip|next|move on|pass|later|come back|tomorrow|no action)\b/)) {
-    if (sel) { addChat("agent", `Skipping <strong>${sel.company}</strong>.`); setTimeout(() => advanceToNext(), 200); return true; }
-  }
-  // Done
-  if (t.match(/\b(done|finished|complete|handled|checked off)\b/) && sel) { markDone(sel.id); return true; }
-  // Draft
-  if (t.match(/\b(draft|email|write|send|reply|compose|follow.?up)\b/)) {
-    if (sel && sel.draftPrompt) { runAction("draft"); return true; }
-    const match = findCompanyInText(t);
-    if (match) { selectItem(match.id); setTimeout(() => { if(match.draftPrompt) runAction("draft"); }, 100); return true; }
-  }
-  // HubSpot / CRM update — open editable CRM editor
-  // Matches: "update Guitar Center", "move Guitar Center to closed lost", "close lost Guitar Center",
-  // "hubspot Guitar Center", "update crm for X", "change X to negotiating", etc.
-  const crmMatch = t.match(/\b(hubspot|crm|update crm|update hub|deal stage|update deal|change.*hubspot|hubspot.*change|modify.*hubspot)\b/)
-    || t.match(/\b(move|change|set|update|mark)\b.*\b(to|as)\s+(closed?\s*(lost|won)|negotiat|commit|demo|disco|nurture|booking)/i)
-    || t.match(/\b(close\s*(lost|won)|closed?\s*(lost|won))\b.*\b\w{3,}/)
-    || (t.match(/\bupdate\b/) && (findCompanyInText(t) || findDealInText(t)));
-  if (crmMatch) {
-    // Detect pre-selected stage from command text
-    const stageHint = extractStageFromText(t);
-    const openCrmForTarget = (target) => {
-      const opts = stageHint ? { presetStage: stageHint } : {};
-      showCrmEditor(target, _lastActionContext.analysis, opts);
-    };
-    if (sel && !findCompanyInText(t) && !findDealInText(t)) { openCrmForTarget(sel); return true; }
-    const match = findCompanyInText(t);
-    if (match) { selectItem(match.id); setTimeout(() => openCrmForTarget(match), 100); return true; }
-    const deal = findDealInText(t);
-    if (deal) {
-      _lastMentionedCompany = deal.name;
-      const synthItem = { id: -1, company: deal.name, task: '', status: 'open', dealValue: deal.amount, hubspot: deal.hubspot };
-      openCrmForTarget(synthItem);
-      return true;
-    }
-    if (sel) { openCrmForTarget(sel); return true; }
-    if (_lastMentionedCompany) {
-      const lastAction = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
-      if (lastAction) { selectItem(lastAction.id); setTimeout(() => openCrmForTarget(lastAction), 100); return true; }
-      const lastDeal = PIPELINE.find(d => d.name.toLowerCase() === _lastMentionedCompany.toLowerCase());
-      if (lastDeal) {
-        const synthItem = { id: -1, company: lastDeal.name, task: '', status: 'open', dealValue: lastDeal.amount };
-        openCrmForTarget(synthItem);
-        return true;
-      }
-    }
-  }
-  // (order form handled above with proposal)
-  // Start
-  if (t.match(/^(start|begin|go|let.?s go|ready|work|run through)/)) { startWork(); return true; }
-  // Deal details with spend + channels → auto-trigger pricing calc
-  // Catches messages like "ARMRA, $80M spend, DTC, Amazon, TikTok Shop, 5 Retailers"
-  const pricingParsed = parsePricingFromChat(text);
-  if (pricingParsed) { runChatPricing(pricingParsed); return true; }
+  { intent: 'slack', pattern: /\b(slack|share to|post to|send to #|dm |message )\b/ },
+  // Delegate
+  { intent: 'delegate', pattern: /\b(forward|send to brian|delegate|hand off|brian.?s|assign|pass to|have brian|tell brian)\b/ },
+  // Bare CRM/HubSpot mention (lower confidence, must be last CRM-related)
+  { intent: 'crm_bare', pattern: /\b(hubspot|crm)\b/ },
+];
 
-  // Company name match
-  const match = findCompanyInText(t);
-  if (match && match.status === "open") { selectItem(match.id); return true; }
+// Negative guards — informational questions bypass write flows
+const NEGATIVE_GUARDS = [
+  /\b(what is (hubspot|crm|a deal stage|pipeline)|how (do|does|to) (i |we )?(use|update|set up|configure)|tell me about (hubspot|crm|deal stages|pipelines)|explain|how does .* work)\b/,
+  /\b(what are .*(stages|fields|properties)|help me understand|can you explain|what.?s the difference)\b/
+];
 
-  return false;
+const PRONOUN_PATTERN = /\b(them|they|their|it|this one|that one|that company|this company|same)\b/;
+
+// Expanded stop words for deal name matching
+const DEAL_STOP_WORDS = ['the','and','for','new','deal','with','from','prescient','test','demo',
+  'update','change','edit','modify','make','want','hubspot','crm','pipeline','stage','call',
+  'notes','add','log','current','what','where','which','how','is','are','in','to','a','my',
+  'this','that','pull','get','check','tell','about','show'];
+
+function trackMentionedCompany(text) {
+  const t = text.toLowerCase();
+  // Check ACTIONS first
+  const actionMatch = ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+  if (actionMatch) { _lastMentionedCompany = actionMatch.company; return; }
+  // Check PIPELINE deals
+  const dealMatch = findDealInText(t);
+  if (dealMatch) { _lastMentionedCompany = dealMatch.name; return; }
 }
 
-function findCompanyInText(text) {
+function detectIntent(text) {
   const t = text.toLowerCase();
-  // Direct company name match in ACTIONS
-  const directMatch = ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
-  if (directMatch) { _lastMentionedCompany = directMatch.company; return directMatch; }
-  // Resolve "them" / "they" / "it" / "that" / "this one" to last-mentioned company
-  if (_lastMentionedCompany && t.match(/\b(them|they|their|it|this one|that one|that company|this company|same)\b/)) {
+  // Check negative guards first — if matched, skip write intents
+  const isInformational = NEGATIVE_GUARDS.some(g => g.test(t));
+  if (isInformational) {
+    if (DEBUG_ROUTER) console.log('[router] negative_guard matched — informational question, sending to AI');
+    return { intent: null, confidence: 0 };
+  }
+  for (const { intent, pattern } of INTENT_PATTERNS) {
+    if (pattern.test(t)) {
+      const confidence = (intent === 'crm_bare') ? 0.5 : 0.9;
+      if (DEBUG_ROUTER) console.log(`[router] matched_intent: ${intent} (confidence: ${confidence}) text: "${text}"`);
+      _lastResolvedIntent = intent;
+      return { intent, confidence };
+    }
+  }
+  // "update [company]" — if "update" + resolvable entity, treat as CRM update
+  if (/\bupdate\b/.test(t) && !t.match(/\b(update.*password|software update|app update)\b/)) {
+    const dealCheck = findDealInText(t);
+    const actionCheck = ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+    if (dealCheck || actionCheck) {
+      if (DEBUG_ROUTER) console.log(`[router] matched_intent: crm_update (via "update" + entity) text: "${text}"`);
+      _lastResolvedIntent = 'crm_update';
+      return { intent: 'crm_update', confidence: 0.8 };
+    }
+  }
+  // Check for pricing pattern (inline deal details)
+  const pricingParsed = parsePricingFromChat(text);
+  if (pricingParsed) {
+    if (DEBUG_ROUTER) console.log(`[router] matched_intent: inline_pricing text: "${text}"`);
+    return { intent: 'inline_pricing', confidence: 0.9, parsed: pricingParsed };
+  }
+  if (DEBUG_ROUTER) console.log(`[router] no_intent_match text: "${text}"`);
+  return { intent: null, confidence: 0 };
+}
+
+function resolveEntity(text) {
+  const t = text.toLowerCase();
+  // 1. Explicit company name in ACTIONS
+  const actionMatch = ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+  if (actionMatch) {
+    _lastMentionedCompany = actionMatch.company;
+    _lastEntitySource = 'actions_direct';
+    if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${actionMatch.company} source: actions_direct`);
+    return { entity: actionMatch, source: 'actions_direct' };
+  }
+  // 2. Explicit company/deal name in PIPELINE
+  const dealMatch = findDealInText(t);
+  if (dealMatch) {
+    _lastMentionedCompany = dealMatch.name;
+    // Try to find corresponding action
+    const actionForDeal = ACTIONS.find(a => a.status === "open" && a.company.toLowerCase() === dealMatch.name.toLowerCase());
+    if (actionForDeal) {
+      _lastEntitySource = 'pipeline_to_action';
+      if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${actionForDeal.company} source: pipeline_to_action`);
+      return { entity: actionForDeal, source: 'pipeline_to_action' };
+    }
+    // Create synthetic item for pipeline-only entity
+    const synthItem = { id: -1, company: dealMatch.name, task: '', status: 'open', dealValue: dealMatch.amount };
+    _lastEntitySource = 'pipeline_synthetic';
+    if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${dealMatch.name} source: pipeline_synthetic`);
+    return { entity: synthItem, source: 'pipeline_synthetic' };
+  }
+  // 3. Currently selected item
+  const sel = getSelected();
+  if (sel) {
+    _lastEntitySource = 'selected';
+    if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${sel.company} source: selected`);
+    return { entity: sel, source: 'selected' };
+  }
+  // 4. Pronoun → _lastMentionedCompany
+  if (_lastMentionedCompany && PRONOUN_PATTERN.test(t)) {
     const resolved = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
-    if (resolved) return resolved;
+    if (resolved) {
+      _lastEntitySource = 'pronoun';
+      if (DEBUG_ROUTER) console.log(`[router] pronoun_resolution: pronoun → ${resolved.company}`);
+      return { entity: resolved, source: 'pronoun' };
+    }
+    // Synthetic from last mentioned
+    const synthItem = { id: -1, company: _lastMentionedCompany, task: '', status: 'open' };
+    _lastEntitySource = 'pronoun_synthetic';
+    if (DEBUG_ROUTER) console.log(`[router] pronoun_resolution: pronoun → ${_lastMentionedCompany} (synthetic)`);
+    return { entity: synthItem, source: 'pronoun_synthetic' };
   }
-  // Also check pipeline deals for company name match → find corresponding action
-  const deal = findDealInText(text);
-  if (deal) {
-    _lastMentionedCompany = deal.name;
-    const actionMatch = ACTIONS.find(a => a.status === "open" && a.company.toLowerCase() === deal.name.toLowerCase());
-    if (actionMatch) return actionMatch;
+  // 5. _lastMentionedCompany as implicit context (for follow-up messages)
+  if (_lastMentionedCompany) {
+    const lastAction = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
+    if (lastAction) {
+      _lastEntitySource = 'last_mentioned';
+      if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${lastAction.company} source: last_mentioned`);
+      return { entity: lastAction, source: 'last_mentioned' };
+    }
+    const lastDeal = PIPELINE.find(d => d.name.toLowerCase() === _lastMentionedCompany.toLowerCase());
+    if (lastDeal) {
+      const synthItem = { id: -1, company: lastDeal.name, task: '', status: 'open', dealValue: lastDeal.amount };
+      _lastEntitySource = 'last_mentioned_pipeline';
+      if (DEBUG_ROUTER) console.log(`[router] resolved_entity: ${lastDeal.name} source: last_mentioned_pipeline`);
+      return { entity: synthItem, source: 'last_mentioned_pipeline' };
+    }
   }
-  return null;
+  if (DEBUG_ROUTER) console.log(`[router] resolved_entity: NONE`);
+  return { entity: null, source: null };
+}
+
+function renderEntitySuggestions() {
+  const open = ACTIONS.filter(a => a.status === "open").slice(0, 5);
+  if (open.length === 0) return '';
+  return '<div style="margin-top:8px;">' + open.map(a =>
+    `<button class="action-chip" onclick="selectItem(${a.id})" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:4px 10px;border-radius:12px;margin:2px;cursor:pointer;font-size:11px;">${a.company}</button>`
+  ).join('') + '</div>';
+}
+
+function showDealStageInfo(target) {
+  const deals = PIPELINE.filter(d => d.name.toLowerCase().includes(target.company.toLowerCase()));
+  if (deals.length > 0) {
+    let html = `<strong>${target.company} — Pipeline</strong>`;
+    deals.forEach(d => {
+      const stageLabel = STAGE_MAP[d.dealstage] || d.stage || 'Unknown';
+      html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:6px 0;font-size:12px;line-height:1.6;">`;
+      html += `<div><strong style="color:#fff;">${d.name}</strong> — <span style="color:#f59e0b;">${stageLabel}</span></div>`;
+      html += `<div style="color:#94a3b8;">${fmtMoney(d.amount)} · ${d.owner || 'Unassigned'}${d.close ? ' · Close: ' + new Date(d.close).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>`;
+      html += `</div>`;
+    });
+    html += renderActionChips(target);
+    addChat("agent", html);
+    return true;
+  }
+  addChat("agent", `No HubSpot deals found for ${target.company}.` + renderActionChips(target));
+  return true;
+}
+
+function showRecoveryResponse(intent) {
+  if (DEBUG_ROUTER) console.log(`[router] recovery_response: intent=${intent} reason=no_entity`);
+  const suggestions = renderEntitySuggestions();
+  const msgs = {
+    crm_update: "Which company should I update in HubSpot?" + suggestions,
+    crm_query: "Which company's deal stage do you want to see?" + suggestions,
+    crm_bare: "Which company? Type a name or select one:" + suggestions,
+    crm_create: "Which company should I create a deal for?" + suggestions,
+    postcall: "Which call? Type a company name or select one:" + suggestions,
+    draft: "Who should I draft an email for?" + suggestions,
+    proposal: "Which company should I generate a proposal for?" + suggestions,
+    pricing: "Which company's pricing should I look up?" + suggestions,
+    prep: "Which company should I prep for?" + suggestions,
+    research: "Who should I research?" + suggestions,
+    linkedin: "Who should I look up on LinkedIn?" + suggestions,
+    slack: "Which company should I share to Slack?" + suggestions,
+    delegate: "Which company should I delegate?" + suggestions,
+    bump: "Who should I bump?" + suggestions,
+    confirmed: "Which company is confirmed?" + suggestions,
+    already_done: "Which company is already handled?" + suggestions,
+    not_interested: "Which company is not a fit?" + suggestions,
+    archive: "Which company should I archive?" + suggestions,
+    skip: "Which company should I skip?" + suggestions,
+    done: "Which company is done?" + suggestions,
+  };
+  addChat("agent", msgs[intent] || ("Which company?" + suggestions));
 }
 
 function extractStageFromText(text) {
@@ -2815,14 +2809,227 @@ function extractStageFromText(text) {
   return null;
 }
 
+function ensureSelected(entity) {
+  if (entity && entity.id && entity.id !== -1) selectItem(entity.id);
+}
+
+function handleLocalCommand(text) {
+  const t = text.toLowerCase();
+  const { intent, confidence, parsed } = detectIntent(text);
+
+  // No intent matched — try company name match to auto-select
+  if (!intent) {
+    const { entity } = resolveEntity(text);
+    if (entity && entity.id !== -1 && entity.source === 'actions_direct') {
+      selectItem(entity.id);
+      return true;
+    }
+    if (DEBUG_ROUTER) console.log(`[router] fallback_ai text: "${text}" reason: no_intent`);
+    return false;
+  }
+
+  // Inline pricing — no entity needed
+  if (intent === 'inline_pricing') {
+    runChatPricing(parsed);
+    return true;
+  }
+
+  // Start — no entity needed
+  if (intent === 'start') { startWork(); return true; }
+
+  // Resolve entity for all other intents
+  const { entity, source } = resolveEntity(text);
+
+  // Route by intent
+  switch (intent) {
+    case 'confirmed':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      addChat("agent", `✓ ${entity.company} — on calendar.`);
+      if (entity.id !== -1) markDone(entity.id);
+      return true;
+
+    case 'already_done':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      addChat("agent", `✓ ${entity.company} — already handled.`);
+      if (entity.id !== -1) markDone(entity.id);
+      return true;
+
+    case 'not_interested':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      addChat("agent", `✕ ${entity.company} — not a fit.`);
+      if (entity.id !== -1) archiveItem(entity.id);
+      return true;
+
+    case 'archive':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      if (entity.id !== -1) archiveItem(entity.id);
+      return true;
+
+    case 'skip':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      addChat("agent", `Skipping <strong>${entity.company}</strong>.`);
+      if (entity.id !== -1) setTimeout(() => advanceToNext(), 200);
+      return true;
+
+    case 'done':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      if (entity.id !== -1) markDone(entity.id);
+      return true;
+
+    case 'crm_query':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      return showDealStageInfo(entity);
+
+    case 'crm_update':
+    case 'crm_bare': {
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      const stageHint = extractStageFromText(t);
+      const crmOpts = stageHint ? { presetStage: stageHint } : {};
+      showCrmEditor(entity, _lastActionContext.analysis, crmOpts);
+      return true;
+    }
+
+    case 'crm_create':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      showCrmWizard(entity);
+      return true;
+
+    case 'postcall': {
+      if (entity) {
+        ensureSelected(entity);
+        // Detect chained actions in the same message
+        const wantsQuote = t.match(/\b(quote|proposal|order form|contract|pricing)\b/);
+        const wantsCrm = t.match(/\b(hubspot|crm|update hubspot|log|update crm)\b/);
+        const wantsDraft = t.match(/\b(draft|email|follow.?up|write|send|reply)\b/) && !wantsQuote;
+        if (wantsQuote || wantsCrm || wantsDraft) {
+          runChainedPostCall(entity, { quote: !!wantsQuote, crm: !!wantsCrm, draft: !!wantsDraft });
+          return true;
+        }
+        showPostCallFlow(entity);
+        return true;
+      }
+      // No entity — try pronoun resolution for Granola search
+      if (_lastMentionedCompany && PRONOUN_PATTERN.test(t)) {
+        fetchGranolaBySearch(_lastMentionedCompany);
+        return true;
+      }
+      // Extract keyword for Granola search
+      const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please|today|add|last|with|them|their|it|post|call|after|debrief)\b/g, '').replace(/\s+/g, ' ').trim();
+      if (keyword && keyword.length > 2) {
+        fetchGranolaBySearch(keyword);
+        return true;
+      }
+      if (_lastMentionedCompany) {
+        fetchGranolaBySearch(_lastMentionedCompany);
+        return true;
+      }
+      showRecoveryResponse(intent);
+      return true;
+    }
+
+    case 'proposal': {
+      const pricingParsed = parsePricingFromChat(text);
+      if (pricingParsed) { runChatPricing(pricingParsed); return true; }
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      showProposalModal(entity);
+      return true;
+    }
+
+    case 'pricing': {
+      const pricingParsed = parsePricingFromChat(text);
+      if (pricingParsed) { runChatPricing(pricingParsed); return true; }
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      showProposalModal(entity);
+      return true;
+    }
+
+    case 'draft':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      if (entity.draftPrompt) { showDraftModal(entity); return true; }
+      showDraftModal(entity);
+      return true;
+
+    case 'bump':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      if (entity.draftPrompt) {
+        const origPrompt = entity.draftPrompt;
+        entity._bumpPrompt = origPrompt.replace(/Draft a follow-up/, "Draft a gentle bump").replace(/Draft a reply/, "Draft a gentle follow-up") + " Keep it 2-3 sentences max. Light and friendly.";
+        showDraftModal({ ...entity, draftPrompt: entity._bumpPrompt });
+      } else {
+        showDraftModal(entity);
+      }
+      return true;
+
+    case 'prep':
+    case 'research':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      buildPrep(entity);
+      return true;
+
+    case 'linkedin':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      showLinkedInModal(entity);
+      return true;
+
+    case 'slack':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      showSlackMenu(entity.id);
+      setTimeout(() => {
+        const toInput = document.getElementById("slackTo");
+        if (!toInput) return;
+        const ch = t.match(/#(\w+)/);
+        const per = t.match(/\b(brian|will|jason|elliot|ali)\b/i);
+        if (ch) toInput.value = "#" + ch[1];
+        else if (per) toInput.value = per[1].charAt(0).toUpperCase() + per[1].slice(1).toLowerCase();
+      }, 100);
+      return true;
+
+    case 'delegate':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      const who = t.match(/brian/) ? "Brian" : t.match(/will/) ? "Will" : t.match(/jason/) ? "Jason" : "the team";
+      showSlackMenu(entity.id);
+      addChat("agent", `Delegating ${entity.company} → ${who}. Update the Slack message below.`);
+      return true;
+
+    default:
+      if (DEBUG_ROUTER) console.log(`[router] fallback_ai text: "${text}" reason: unhandled_intent ${intent}`);
+      return false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ENTITY LOOKUP HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+function findCompanyInText(text) {
+  const { entity } = resolveEntity(text);
+  return entity;
+}
+
 function findDealInText(text) {
   const t = text.toLowerCase();
-  const stopWords = ['the','and','for','new','deal','with','from','prescient','test','demo'];
   return PIPELINE.find(d => {
     const name = d.name.toLowerCase();
     if (t.includes(name)) return true;
     // Check if any significant word (4+ chars, not a stop word) from the deal name appears
-    const words = name.split(/[\s\-–—\/,]+/).filter(w => w.length >= 4 && !stopWords.includes(w));
+    const words = name.split(/[\s\-–—\/,]+/).filter(w => w.length >= 4 && !DEAL_STOP_WORDS.includes(w));
     return words.some(w => t.includes(w));
   });
 }
