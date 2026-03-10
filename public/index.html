@@ -544,13 +544,21 @@ async function syncInBackground() {
     const total = newEmails + newDeals + newMtgs;
 
     if (newEmails > 0) {
+      const intros = [];
       (data.newActions || []).forEach(a => {
         if (a.isIntro) {
           addFeedItem('email', `<strong style="color:#10b981;">🤝 WARM INTRO</strong> <strong>${a.company}</strong> — ${a.task}`, a.id);
+          intros.push(a);
+          console.log(`[sync:feed] Intro email surfaced: company=${a.company}, introducer=${a.introducer}, prospects=${JSON.stringify(a.prospects)}`);
         } else {
           addFeedItem('email', `<strong>${a.company}</strong> — ${a.task}`, a.id);
         }
       });
+      // Auto-select intro if it's the only new item and nothing is selected
+      if (intros.length === 1 && !selectedId) {
+        const introItem = ACTIONS.find(x => x.id === intros[0].id);
+        if (introItem) setTimeout(() => selectItem(introItem.id), 300);
+      }
     }
     if (newDeals > 0) {
       (data.updatedPipeline || []).forEach(d => {
@@ -1365,7 +1373,6 @@ function selectItem(id) {
       chatMsg += `<div style="margin-top:4px;color:#94a3b8;font-size:10px;">Prospect: ${a.prospects.map(p => `<strong style="color:#fff;">${p.name}</strong>${p.email ? ` &lt;${p.email}&gt;` : ''}`).join(', ')}</div>`;
     }
     chatMsg += `</div>`;
-    chatMsg += `<div style="font-size:11px;color:#f59e0b;margin-bottom:8px;font-weight:600;">⚡ Recommended: Reply with Calendly link to schedule a call</div>`;
   } else if (a.aiRec) {
     chatMsg += `<div style="font-size:11px;color:#a855f7;margin-bottom:8px;">AI: ${a.aiRec}</div>`;
   }
@@ -1375,8 +1382,21 @@ function selectItem(id) {
   } else {
     chatMsg += `<div style="color:#94a3b8;font-size:13px;">${a.task}</div>`;
   }
-  chatMsg += renderActionChips(a);
-  addChat("agent", chatMsg);
+
+  // For intros: show "What to do next" workflow panel with HubSpot entity check
+  if (a.isIntro) {
+    chatMsg += `<div id="introWorkflow-${a.id}" style="margin-top:10px;border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:10px 12px;background:rgba(16,185,129,0.04);">`;
+    chatMsg += `<div style="font-size:12px;font-weight:700;color:#10b981;margin-bottom:8px;">What to do next</div>`;
+    chatMsg += `<div style="font-size:11px;color:#64748b;margin-bottom:8px;"><div class="spin" style="display:inline-block;width:12px;height:12px;vertical-align:middle;margin-right:6px;"></div>Checking HubSpot for ${a.company}...</div>`;
+    chatMsg += `</div>`;
+    chatMsg += renderActionChips(a);
+    addChat("agent", chatMsg);
+    // Async: resolve HubSpot entity and update the workflow panel
+    resolveIntroWorkflow(a);
+  } else {
+    chatMsg += renderActionChips(a);
+    addChat("agent", chatMsg);
+  }
 
   renderContextBar();
   renderCurrentTab();
@@ -1923,6 +1943,256 @@ function renderActionChips(item, extraContext = {}) {
     chips.unshift(`<button class="action-chip chip-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${item.id}))">🎙️ Post-Call</button>`);
   }
   return `<div class="action-chips">${chips.join('')}</div>`;
+}
+
+// ═══════════════════════════════════════
+// INTRO WORKFLOW — Operator decision tree
+// ═══════════════════════════════════════
+async function resolveIntroWorkflow(item) {
+  const panel = document.getElementById(`introWorkflow-${item.id}`);
+  if (!panel) return;
+
+  console.log(`[intro:workflow] Resolving HubSpot entity for: ${item.company}`);
+
+  // 1. Check local PIPELINE first
+  const localDeal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+
+  // 2. Search HubSpot for company/deal/contact
+  let hubspotMatch = { deals: [], companies: [], contacts: [], hasMatch: false };
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'search_company', query: item.company }),
+    });
+    const data = await res.json();
+    if (data.success) hubspotMatch = data.result;
+  } catch (e) {
+    console.error('[intro:workflow] HubSpot search failed:', e);
+  }
+
+  console.log(`[intro:workflow] HubSpot match: hasMatch=${hubspotMatch.hasMatch}, deals=${hubspotMatch.deals.length}, companies=${hubspotMatch.companies.length}, contacts=${hubspotMatch.contacts.length}`);
+
+  // 3. Build structured recommendations
+  const recs = [];
+  const hasExistingDeal = localDeal || hubspotMatch.deals.length > 0;
+  const hasExistingCompany = hubspotMatch.companies.length > 0;
+  const existingDeal = localDeal || (hubspotMatch.deals[0] ? { id: hubspotMatch.deals[0].id, name: hubspotMatch.deals[0].name, stage: hubspotMatch.deals[0].stage } : null);
+  const prospectEmail = item.prospects?.[0]?.email || (item.replyTo || []).find(e => !e.includes('prescient')) || '';
+  const prospectName = item.prospects?.[0]?.name || '';
+
+  // Store for use by createLeadFromIntro
+  item._hubspotMatch = hubspotMatch;
+
+  // Rec 1: Reply with Calendly (always first for intros)
+  recs.push({
+    title: 'Reply with Calendly link',
+    reason: `Thank ${item.introducer || 'introducer'}, connect with prospect, suggest a call`,
+    priority: 'high',
+    targetCompany: item.company,
+    actionable: true,
+    actionType: 'draft_intro_reply',
+    icon: '🤝',
+    btnStyle: 'background:#10b981;color:#fff;border-color:#10b981;',
+  });
+
+  // Rec 2: CRM — create or update
+  if (!hasExistingDeal && !hasExistingCompany) {
+    recs.push({
+      title: 'Create new lead in HubSpot',
+      reason: `No existing record found for ${item.company}. Create deal + company + contact.`,
+      priority: 'high',
+      targetCompany: item.company,
+      actionable: true,
+      actionType: 'create_lead',
+      icon: '➕',
+      btnStyle: 'background:rgba(245,158,11,0.15);color:#f59e0b;border-color:rgba(245,158,11,0.3);',
+    });
+  } else if (hasExistingDeal) {
+    recs.push({
+      title: `Update existing deal — ${existingDeal.name || item.company}`,
+      reason: `Deal exists${existingDeal.stage ? ' at ' + existingDeal.stage : ''}. Attach intro context and update notes.`,
+      priority: 'medium',
+      targetCompany: item.company,
+      actionable: true,
+      actionType: 'update_existing_deal',
+      icon: '⚡',
+      btnStyle: 'background:rgba(96,165,250,0.12);color:#60a5fa;border-color:rgba(96,165,250,0.3);',
+    });
+  } else {
+    recs.push({
+      title: `Company exists — create deal for ${item.company}`,
+      reason: `Company found in HubSpot but no active deal. Create opportunity.`,
+      priority: 'high',
+      targetCompany: item.company,
+      actionable: true,
+      actionType: 'create_deal_existing_company',
+      icon: '➕',
+      btnStyle: 'background:rgba(245,158,11,0.15);color:#f59e0b;border-color:rgba(245,158,11,0.3);',
+    });
+  }
+
+  // Rec 3: Prep
+  recs.push({
+    title: 'Prep intro response',
+    reason: `Research ${item.company} before replying`,
+    priority: 'medium',
+    targetCompany: item.company,
+    actionable: true,
+    actionType: 'prep',
+    icon: '🧠',
+    btnStyle: 'background:rgba(168,85,247,0.12);color:#a855f7;border-color:rgba(168,85,247,0.3);',
+  });
+
+  // Rec 4: LinkedIn
+  if (prospectName) {
+    recs.push({
+      title: `Connect with ${prospectName} on LinkedIn`,
+      reason: 'Send connection request to warm up before the call',
+      priority: 'low',
+      targetCompany: item.company,
+      actionable: true,
+      actionType: 'linkedin',
+      icon: '💼',
+      btnStyle: 'background:rgba(59,130,246,0.12);color:#3b82f6;border-color:rgba(59,130,246,0.3);',
+    });
+  }
+
+  console.log(`[intro:workflow] Generated ${recs.length} recommendations, crmMatch=${hasExistingDeal ? 'deal' : hasExistingCompany ? 'company' : 'none'}`);
+
+  // 4. Render the workflow panel
+  let html = `<div style="font-size:12px;font-weight:700;color:#10b981;margin-bottom:10px;">What to do next</div>`;
+
+  // CRM status banner
+  if (!hasExistingDeal && !hasExistingCompany) {
+    html += `<div style="font-size:11px;padding:6px 10px;margin-bottom:10px;border-radius:5px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);color:#f59e0b;font-weight:600;">⚠ No HubSpot record found for ${item.company}</div>`;
+  } else if (hasExistingDeal) {
+    html += `<div style="font-size:11px;padding:6px 10px;margin-bottom:10px;border-radius:5px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);color:#10b981;">✓ Deal exists: <strong>${existingDeal.name}</strong>${existingDeal.stage ? ' — ' + existingDeal.stage : ''}</div>`;
+  } else {
+    html += `<div style="font-size:11px;padding:6px 10px;margin-bottom:10px;border-radius:5px;background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.2);color:#60a5fa;">Company found in HubSpot — no active deal</div>`;
+  }
+
+  // Recommendation cards
+  recs.forEach((r, i) => {
+    const onclick = introWorkflowAction(item, r);
+    html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;">
+      <button onclick="${onclick}" style="font-size:11px;padding:5px 10px;border-radius:5px;${r.btnStyle}cursor:pointer;font-weight:600;border:1px solid;white-space:nowrap;flex-shrink:0;">${r.icon} ${r.title}</button>
+      <span style="font-size:10px;color:#64748b;line-height:1.5;padding-top:3px;">${r.reason}</span>
+    </div>`;
+  });
+
+  panel.innerHTML = html;
+}
+
+function introWorkflowAction(item, rec) {
+  const esc = (s) => (s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  switch (rec.actionType) {
+    case 'draft_intro_reply':
+      return `showDraftModal(ACTIONS.find(a=>a.id===${item.id}))`;
+    case 'create_lead':
+      return `createLeadFromIntro(${item.id})`;
+    case 'create_deal_existing_company':
+      return `createLeadFromIntro(${item.id})`;
+    case 'update_existing_deal':
+      return `showCrmEditor(ACTIONS.find(a=>a.id===${item.id}))`;
+    case 'prep':
+      return `buildPrep(ACTIONS.find(a=>a.id===${item.id}))`;
+    case 'linkedin':
+      return `showLinkedInModal(ACTIONS.find(a=>a.id===${item.id}))`;
+    default:
+      return `selectItem(${item.id})`;
+  }
+}
+
+async function createLeadFromIntro(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId);
+  if (!item) return;
+
+  const prospectEmail = item.prospects?.[0]?.email || (item.replyTo || []).find(e => !e.includes('prescient')) || '';
+  const prospectName = item.prospects?.[0]?.name || '';
+  const introContext = [
+    `Warm intro from ${item.introducer || 'unknown'}${item.introducerCompany ? ' (' + item.introducerCompany + ')' : ''}`,
+    `Prospect: ${prospectName}${prospectEmail ? ' <' + prospectEmail + '>' : ''}`,
+    `Source: Email intro — ${item.meta || ''}`,
+    `Task: ${item.task || ''}`,
+    `Date: ${item.lastActivity || new Date().toISOString().split('T')[0]}`,
+  ].join('\n');
+
+  console.log(`[intro:create_lead] Creating lead for: ${item.company}, contact: ${prospectName} <${prospectEmail}>`);
+
+  // Show inline loading
+  const panel = document.getElementById(`introWorkflow-${item.id}`);
+  if (panel) {
+    const btn = panel.querySelector('button');
+    if (btn) btn.innerHTML = '<div class="spin" style="display:inline-block;width:12px;height:12px;vertical-align:middle;margin-right:4px;"></div>Creating...';
+  }
+
+  try {
+    const res = await fetch('/api/crm-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_lead',
+        dealName: item.company,
+        contactEmail: prospectEmail || undefined,
+        contactName: prospectName || undefined,
+        introContext,
+      }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Failed');
+
+    const r = data.result;
+    const dealId = r.deal?.id;
+    const hubspotUrl = dealId ? `https://app.hubspot.com/contacts/21506140/record/0-3/${dealId}` : null;
+
+    console.log(`[intro:create_lead] Success — deal: ${dealId}, company: ${r.company?.id}, contact: ${r.contact?.id}`);
+
+    // Update the action item with HubSpot link
+    if (hubspotUrl) item.hubspot = hubspotUrl;
+
+    // Add to local PIPELINE
+    if (dealId) {
+      PIPELINE.push({
+        id: dealId,
+        name: item.company,
+        stage: 'Disco Booked',
+        amount: null,
+        owner: 'Mike',
+        _syncSource: 'hubspot',
+      });
+    }
+
+    // Success feedback
+    let successHtml = `<div style="font-size:11px;padding:8px 10px;border-radius:5px;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);margin-bottom:8px;">`;
+    successHtml += `<span style="color:#10b981;font-weight:700;">✓ Lead created in HubSpot</span>`;
+    if (r.deal?.id) successHtml += `<br><span style="color:#94a3b8;">Deal: ${item.company} — Disco Booked</span>`;
+    if (r.contact?.id) successHtml += `<br><span style="color:#94a3b8;">Contact: ${prospectName} &lt;${prospectEmail}&gt;</span>`;
+    if (r.company?.id) successHtml += `<br><span style="color:#94a3b8;">Company: ${item.company}</span>`;
+    if (hubspotUrl) successHtml += `<br><a href="${hubspotUrl}" target="_blank" style="font-size:10px;color:#60a5fa;">Open in HubSpot &rarr;</a>`;
+    successHtml += `</div>`;
+
+    // Re-render remaining actions (reply + prep)
+    successHtml += `<div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Next steps:</div>`;
+    successHtml += `<div style="display:flex;gap:6px;flex-wrap:wrap;">`;
+    successHtml += `<button onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))" style="font-size:11px;padding:5px 10px;border-radius:5px;background:#10b981;color:#fff;border:1px solid #10b981;cursor:pointer;font-weight:600;">🤝 Reply with Calendly</button>`;
+    successHtml += `<button onclick="buildPrep(ACTIONS.find(a=>a.id===${item.id}))" style="font-size:11px;padding:5px 10px;border-radius:5px;background:rgba(168,85,247,0.12);color:#a855f7;border:1px solid rgba(168,85,247,0.3);cursor:pointer;font-weight:600;">🧠 Prep</button>`;
+    if (hubspotUrl) successHtml += `<button onclick="window.open('${hubspotUrl}','_blank')" style="font-size:11px;padding:5px 10px;border-radius:5px;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.3);cursor:pointer;font-weight:600;">⚡ Open in HubSpot</button>`;
+    successHtml += `</div>`;
+
+    if (panel) panel.innerHTML = successHtml;
+
+    addChat("agent", `<strong style="color:#10b981;">✓ Lead created</strong> — ${item.company} added to HubSpot as Disco Booked.${hubspotUrl ? ` <a href="${hubspotUrl}" target="_blank" style="color:#60a5fa;">Open &rarr;</a>` : ''}`);
+    showToast(`Lead created: ${item.company}`);
+    addFeedItem('deal', `<strong style="color:#10b981;">New lead:</strong> <strong>${item.company}</strong> — from warm intro`, null);
+
+  } catch (err) {
+    console.error('[intro:create_lead] Error:', err);
+    if (panel) {
+      panel.innerHTML = `<div style="color:#ef4444;font-size:11px;">Failed to create lead: ${err.message}</div>`;
+    }
+    showToast(`Failed: ${err.message}`);
+  }
 }
 
 function showCrmEditor(item, analysis, opts = {}) {

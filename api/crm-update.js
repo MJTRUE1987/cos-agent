@@ -235,8 +235,160 @@ Return ONLY valid JSON, no markdown.`,
         break;
       }
 
+      case 'search_company': {
+        // Search HubSpot for companies, deals, and contacts matching a name
+        const query = req.body.query;
+        if (!query) return res.status(400).json({ error: 'query required' });
+        console.log(`[crm:search_company] Searching HubSpot for: ${query}`);
+
+        const searches = await Promise.allSettled([
+          // Search deals
+          fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/search`, {
+            method: 'POST', headers,
+            body: JSON.stringify({
+              query,
+              properties: ['dealname', 'dealstage', 'amount', 'closedate', 'hubspot_owner_id'],
+              limit: 5,
+            }),
+          }).then(r2 => r2.json()),
+          // Search companies
+          fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/search`, {
+            method: 'POST', headers,
+            body: JSON.stringify({
+              query,
+              properties: ['name', 'domain', 'industry', 'city', 'state'],
+              limit: 5,
+            }),
+          }).then(r2 => r2.json()),
+          // Search contacts
+          fetch(`${HUBSPOT_BASE}/crm/v3/objects/contacts/search`, {
+            method: 'POST', headers,
+            body: JSON.stringify({
+              query,
+              properties: ['email', 'firstname', 'lastname', 'company', 'jobtitle'],
+              limit: 5,
+            }),
+          }).then(r2 => r2.json()),
+        ]);
+
+        const deals = searches[0].status === 'fulfilled' ? (searches[0].value.results || []) : [];
+        const companies = searches[1].status === 'fulfilled' ? (searches[1].value.results || []) : [];
+        const contacts = searches[2].status === 'fulfilled' ? (searches[2].value.results || []) : [];
+
+        console.log(`[crm:search_company] Found: ${deals.length} deals, ${companies.length} companies, ${contacts.length} contacts`);
+
+        result = {
+          deals: deals.map(d => ({ id: d.id, name: d.properties.dealname, stage: d.properties.dealstage, amount: d.properties.amount })),
+          companies: companies.map(c => ({ id: c.id, name: c.properties.name, domain: c.properties.domain, industry: c.properties.industry })),
+          contacts: contacts.map(c => ({ id: c.id, email: c.properties.email, firstName: c.properties.firstname, lastName: c.properties.lastname, company: c.properties.company, title: c.properties.jobtitle })),
+          hasMatch: deals.length > 0 || companies.length > 0 || contacts.length > 0,
+        };
+        break;
+      }
+
+      case 'create_lead': {
+        // Create a new deal + contact + company for a warm intro / new lead
+        const { dealName, contactEmail: leadEmail, contactName: leadName, introContext, stage: leadStage } = req.body;
+        if (!dealName) return res.status(400).json({ error: 'dealName required' });
+        console.log(`[crm:create_lead] Creating lead: ${dealName}, contact: ${leadName} <${leadEmail}>`);
+
+        const results = {};
+
+        // 1. Create company
+        try {
+          const companyRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ properties: { name: dealName } }),
+          });
+          results.company = await companyRes.json();
+          console.log(`[crm:create_lead] Company created: ${results.company.id}`);
+        } catch (e) {
+          console.error('[crm:create_lead] Company creation failed:', e.message);
+        }
+
+        // 2. Create contact if email provided
+        if (leadEmail) {
+          try {
+            const nameParts = (leadName || '').split(' ');
+            const contactRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
+              method: 'POST', headers,
+              body: JSON.stringify({
+                properties: {
+                  email: leadEmail,
+                  firstname: nameParts[0] || '',
+                  lastname: nameParts.slice(1).join(' ') || '',
+                  company: dealName,
+                },
+              }),
+            });
+            results.contact = await contactRes.json();
+            console.log(`[crm:create_lead] Contact created: ${results.contact.id}`);
+          } catch (e) {
+            console.error('[crm:create_lead] Contact creation failed:', e.message);
+          }
+        }
+
+        // 3. Create deal
+        try {
+          const dealProps = {
+            dealname: dealName,
+            dealstage: leadStage || '93124525', // Default: Disco Booked
+            hubspot_owner_id: '151853665', // Mike
+            pipeline: 'default',
+          };
+          const dealRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals`, {
+            method: 'POST', headers,
+            body: JSON.stringify({ properties: dealProps }),
+          });
+          results.deal = await dealRes.json();
+          console.log(`[crm:create_lead] Deal created: ${results.deal.id}`);
+
+          // Associate deal with company and contact
+          if (results.company?.id && results.deal?.id) {
+            await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/${results.deal.id}/associations/companies/${results.company.id}/deal_to_company`, {
+              method: 'PUT', headers,
+            }).catch(() => {});
+          }
+          if (results.contact?.id && results.deal?.id) {
+            await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/${results.deal.id}/associations/contacts/${results.contact.id}/deal_to_contact`, {
+              method: 'PUT', headers,
+            }).catch(() => {});
+          }
+        } catch (e) {
+          console.error('[crm:create_lead] Deal creation failed:', e.message);
+        }
+
+        // 4. Add intro context as a note
+        if (introContext && results.deal?.id) {
+          try {
+            const noteRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/notes`, {
+              method: 'POST', headers,
+              body: JSON.stringify({
+                properties: {
+                  hs_timestamp: new Date().toISOString(),
+                  hs_note_body: introContext,
+                },
+              }),
+            });
+            const noteResult = await noteRes.json();
+            if (noteResult.id) {
+              await fetch(`${HUBSPOT_BASE}/crm/v3/objects/notes/${noteResult.id}/associations/deals/${results.deal.id}/note_to_deal`, {
+                method: 'PUT', headers,
+              }).catch(() => {});
+            }
+            results.note = noteResult;
+            console.log(`[crm:create_lead] Note attached to deal`);
+          } catch (e) {
+            console.error('[crm:create_lead] Note creation failed:', e.message);
+          }
+        }
+
+        result = results;
+        break;
+      }
+
       default:
-        return res.status(400).json({ error: `Unknown action: ${action}. Use: update_stage, create_deal, add_note, create_contact, summarize_call, get_deal` });
+        return res.status(400).json({ error: `Unknown action: ${action}. Use: update_stage, create_deal, add_note, create_contact, create_lead, search_company, summarize_call, get_deal` });
     }
 
     return res.status(200).json({ success: true, action, result });
