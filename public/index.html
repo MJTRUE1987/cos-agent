@@ -271,6 +271,18 @@
   .ctx-li:hover { border-color: rgba(10,102,194,0.5); }
   .ctx-slack-btn { background: rgba(74,21,75,0.3); color: #E8D5E8; border: 1px solid rgba(74,21,75,0.4); }
   .ctx-slack-btn:hover { border-color: rgba(74,21,75,0.6); }
+
+  /* ACTION CHIPS — inline chat buttons */
+  .action-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .action-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid; transition: all 0.15s; }
+  .action-chip:hover { transform: translateY(-1px); filter: brightness(1.2); }
+  .chip-proposal { background: rgba(16,185,129,0.12); color: #10b981; border-color: rgba(16,185,129,0.3); }
+  .chip-hubspot { background: rgba(245,158,11,0.12); color: #fcd34d; border-color: rgba(245,158,11,0.3); }
+  .chip-draft { background: rgba(30,64,175,0.15); color: #93c5fd; border-color: rgba(30,64,175,0.3); }
+  .chip-prep { background: rgba(16,185,129,0.1); color: #6ee7b7; border-color: rgba(16,185,129,0.2); }
+  .chip-linkedin { background: rgba(10,102,194,0.15); color: #93c5fd; border-color: rgba(10,102,194,0.3); }
+  .chip-slack { background: rgba(74,21,75,0.25); color: #E8D5E8; border-color: rgba(74,21,75,0.4); }
+  .chip-postcall { background: linear-gradient(135deg, rgba(124,58,237,0.15), rgba(124,58,237,0.08)); color: #c4b5fd; border-color: rgba(124,58,237,0.3); }
   .ctx-bottom-row { display: flex; gap: 6px; justify-content: center; border-top: 1px solid #1e293b; padding-top: 8px; margin-top: 4px; }
   .ctx-status-btn { padding: 5px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; background: transparent; border: 1px solid #1e293b; }
   .ctx-done { color: #10b981; }
@@ -311,6 +323,7 @@
     <div class="nav-item active" onclick="showTab('today')"><div class="dot" style="background:#10b981;"></div> Today <span class="count" id="navTodayCount"></span></div>
     <div class="nav-item" onclick="showTab('pipeline')"><div class="dot" style="background:#f59e0b;"></div> Pipeline <span class="count" id="navPipeCount"></span></div>
     <div class="nav-item" onclick="showTab('leads')"><div class="dot" style="background:#a855f7;"></div> All Leads <span class="count" id="navLeadsCount"></span></div>
+    <div class="nav-item" onclick="showTab('pricing')"><div class="dot" style="background:#22d3ee;"></div> Pricing</div>
     <div class="spacer"></div>
     <div id="sidebarOverdue" style="margin-bottom:12px;"></div>
     <div style="margin-bottom:10px;">
@@ -459,6 +472,9 @@ let quickMode = false;
 // Navigation history for back button
 let _navHistory = [];
 let _navRestoringState = false; // guard to prevent pushes during popstate
+
+// Track last-mentioned company for "them" / "they" / "it" resolution
+let _lastMentionedCompany = null;
 
 // ═══════════════════════════════════════
 // LIVE DATA SYNC (Feature 3)
@@ -911,6 +927,7 @@ function selectItem(id) {
   }
 
   selectedId = id;
+  _lastMentionedCompany = a.company;
   const days = daysStale(a.lastActivity);
   const urgencyColor = days >= 5 ? '#ef4444' : days >= 3 ? '#f59e0b' : '#10b981';
   const urgencyLabel = days >= 5 ? 'OVERDUE' : days >= 3 ? 'STALE' : 'FRESH';
@@ -924,7 +941,7 @@ function selectItem(id) {
   } else {
     chatMsg += `<div style="color:#94a3b8;font-size:13px;">${a.task}</div>`;
   }
-  chatMsg += `<div style="font-size:11px;color:#475569;margin-top:8px;">Use the actions below or type a command.</div>`;
+  chatMsg += renderActionChips(a);
   addChat("agent", chatMsg);
 
   renderContextBar();
@@ -1078,7 +1095,7 @@ function runAction(type, id) {
   if (type === "draft") {
     showDraftModal(sel);
   } else if (type === "hubspot") {
-    showCrmWizard(sel);
+    showCrmEditor(sel, _lastActionContext.analysis);
   } else if (type === "both" || type === "post-call") {
     showPostCallFlow(sel);
   } else if (type === "order" || type === "proposal") {
@@ -1089,7 +1106,14 @@ function runAction(type, id) {
 }
 
 // ── MODAL HELPERS ──
-function closeModal() { document.getElementById("modalContainer").innerHTML = ""; }
+function closeModal() {
+  document.getElementById("modalContainer").innerHTML = "";
+  // Open next chained modal if queued from runChainedPostCall
+  if (window._pendingChainModals && window._pendingChainModals.length > 0) {
+    const next = window._pendingChainModals.shift();
+    setTimeout(() => next(), 200);
+  }
+}
 
 function showModal(title, bodyHtml, footerHtml) {
   document.getElementById("modalContainer").innerHTML = `
@@ -1409,11 +1433,150 @@ function showPostCallAnalysisResult(itemId, analysis) {
       </div>
     </div>`;
 
-  addChat("agent", `<strong>Call analyzed — ${s.item.company}</strong><br>${a.summary || ''}`);
+  addChat("agent", `<strong>Call analyzed — ${s.item.company}</strong><br>${a.summary || ''}${renderActionChips(s.item, { analysis: a })}`);
 }
 
 // Store pipeline state across steps
 let _postCallState = {};
+
+// ═══════════════════════════════════════
+// ACTION CHIPS — Interactive inline chat buttons
+// ═══════════════════════════════════════
+let _lastActionContext = { item: null, granolaNote: null, analysis: null };
+
+function renderActionChips(item, extraContext = {}) {
+  _lastActionContext = { item, granolaNote: extraContext.granolaNote || null, analysis: extraContext.analysis || null };
+  const chips = [];
+  chips.push(`<button class="action-chip chip-proposal" onclick="showProposalModal(ACTIONS.find(a=>a.id===${item.id}))">📄 Order Form</button>`);
+  chips.push(`<button class="action-chip chip-hubspot" onclick="showCrmEditor(ACTIONS.find(a=>a.id===${item.id}), _lastActionContext.analysis)">⚡ HubSpot</button>`);
+  chips.push(`<button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}), {callAnalysis: _lastActionContext.analysis, granolaBody: _lastActionContext.granolaNote?.summaryText||''})">✏️ Draft Email</button>`);
+  chips.push(`<button class="action-chip chip-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${item.id}))">🧠 Prep</button>`);
+  chips.push(`<button class="action-chip chip-linkedin" onclick="showLinkedInModal(ACTIONS.find(a=>a.id===${item.id}))">💼 LinkedIn</button>`);
+  chips.push(`<button class="action-chip chip-slack" onclick="showSlackMenu(${item.id})">💬 Slack</button>`);
+  if (item.granola || extraContext.granolaNote) {
+    chips.unshift(`<button class="action-chip chip-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${item.id}))">🎙️ Post-Call</button>`);
+  }
+  return `<div class="action-chips">${chips.join('')}</div>`;
+}
+
+function showCrmEditor(item, analysis) {
+  if (!item) { addChat("agent", "Select an item first."); return; }
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const stages = ["Disco Booked","Disco Complete","Demo Scheduled","Demo Completed","Negotiating","Committed","Closed Won","Closed Lost"];
+  const currentStage = deal ? (STAGE_MAP[deal.dealstage] || deal.stage || '') : (analysis?.suggestedDealStage || '');
+  const dealValue = analysis?.dealValueEstimate || (deal ? deal.amount || '' : item.dealValue || '');
+  const closeDate = deal?.close || new Date(Date.now() + 90*86400000).toISOString().split('T')[0];
+  const noteText = (analysis ? (analysis.summary || '') + (analysis.nextSteps?.length ? '\n\nNext Steps:\n' + analysis.nextSteps.join('\n') : '') : item.task || '');
+
+  // Extract contact info from Granola note or draftPrompt
+  const granolaNote = _lastActionContext.granolaNote;
+  const externalAttendees = (granolaNote?.attendees || []).filter(a => a.email && !a.email.includes('prescient'));
+  const contactName = externalAttendees[0]?.name || '';
+  const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+  const contactEmail = externalAttendees[0]?.email || emailMatch[0] || '';
+
+  const stageOptions = stages.map(s => `<option value="${s}" ${s === currentStage ? 'selected' : ''}>${s}</option>`).join('');
+
+  showModal(`⚡ Update HubSpot — ${item.company}`, `
+    <div class="modal-field">
+      <label class="modal-label">Deal Stage</label>
+      <select class="modal-input" id="crmEditorStage">${stageOptions}</select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Deal Value</label>
+      <input class="modal-input" id="crmEditorValue" value="${dealValue}" placeholder="e.g. 120000">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Close Date</label>
+      <input class="modal-input" id="crmEditorCloseDate" type="date" value="${closeDate}">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Call Note</label>
+      <textarea class="modal-textarea" id="crmEditorNote" rows="6" placeholder="Summary, next steps, key takeaways...">${noteText}</textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Contact Name</label>
+      <input class="modal-input" id="crmEditorContactName" value="${contactName}" placeholder="Contact name">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Contact Email</label>
+      <input class="modal-input" id="crmEditorContactEmail" value="${contactEmail}" placeholder="email@company.com">
+    </div>
+    <div id="crmEditorStatus"></div>`,
+    `<button class="modal-btn-secondary" onclick="closeModal()">Cancel</button>
+     <button class="modal-btn-primary" onclick="submitCrmEditor(${item.id})">Update HubSpot &rarr;</button>`);
+
+  // Store for synthetic items (no ACTIONS entry)
+  window._crmEditorItem = item;
+}
+
+async function submitCrmEditor(itemId) {
+  const item = ACTIONS.find(a => a.id === itemId) || window._crmEditorItem || { id: itemId, company: 'Unknown' };
+  const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
+  const stage = document.getElementById("crmEditorStage").value;
+  const value = document.getElementById("crmEditorValue").value.trim();
+  const closeDate = document.getElementById("crmEditorCloseDate").value;
+  const note = document.getElementById("crmEditorNote").value.trim();
+  const contactName = document.getElementById("crmEditorContactName").value.trim();
+  const contactEmail = document.getElementById("crmEditorContactEmail").value.trim();
+  const statusEl = document.getElementById("crmEditorStatus");
+
+  statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Updating HubSpot...</div>';
+  const results = [];
+
+  try {
+    // Update stage if changed
+    const currentStage = deal ? (STAGE_MAP[deal.dealstage] || deal.stage || '') : '';
+    if (deal && stage !== currentStage) {
+      const stageId = STAGE_IDS[stage] || stage;
+      await crmDoUpdateStage(deal.id, stageId, item.company, stage);
+      results.push('Stage updated');
+    }
+
+    // Update deal value and close date if deal exists
+    if (deal && (value || closeDate)) {
+      const props = {};
+      if (value) props.amount = value;
+      if (closeDate) props.closedate = closeDate;
+      await fetch('/api/crm-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_stage', dealId: deal.id, properties: props }),
+      });
+      if (value) results.push('Value updated');
+      if (closeDate) results.push('Close date updated');
+    }
+
+    // Add note
+    if (note) {
+      await fetch('/api/crm-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_note', dealId: deal?.id || undefined, note, companyName: item.company }),
+      });
+      results.push('Note saved');
+    }
+
+    // Create contact if new email provided
+    if (contactEmail && contactName) {
+      try {
+        await fetch('/api/crm-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create_contact', email: contactEmail, name: contactName, company: item.company }),
+        });
+        results.push('Contact created/updated');
+      } catch (e) { /* contact creation is best-effort */ }
+    }
+
+    statusEl.innerHTML = `<div class="modal-success" style="margin-top:12px;">&#10003; ${results.join(' · ') || 'Updated'} — ${item.company}</div>`;
+    document.getElementById("modalFooter").innerHTML = `<button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+    addChat("agent", `<strong>&#10003; HubSpot updated</strong> — ${item.company}: ${results.join(', ')}`);
+    _intelligenceCache = null;
+  } catch (err) {
+    statusEl.innerHTML = `<div class="modal-error">${err.message}</div>`;
+  }
+}
 
 async function runPostCallAnalysis(itemId) {
   const item = ACTIONS.find(a => a.id === itemId) || { id: itemId, company: 'Unknown' };
@@ -2166,12 +2329,7 @@ async function buildPrep(item) {
   localPrep += `<div id="aiPrepContent"><div class="modal-loading"><div class="spin"></div>Loading AI prep brief from HubSpot + web...</div></div>`;
   localPrep += `</div>`;
 
-  localPrep += `<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">`;
-  localPrep += `<div class="quick-chip" onclick="deepPrep(${item.id})" style="border-color:#10b981;color:#10b981;">Full AI Brief</div>`;
-  localPrep += `<div class="quick-chip" onclick="runAction('linkedin',${item.id})" style="border-color:#0a66c2;color:#60a5fa;">LinkedIn</div>`;
-  if (item.emailUrl) localPrep += `<div class="quick-chip" onclick="window.open('${item.emailUrl}','_blank')">Open in Superhuman</div>`;
-  if (item.granola) localPrep += `<div class="quick-chip" onclick="window.open('${item.granola}','_blank')">Granola Notes</div>`;
-  localPrep += `</div>`;
+  localPrep += renderActionChips(item);
 
   addChat("agent", localPrep);
 
@@ -2282,6 +2440,14 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   addChat("user", text); input.value = ""; input.style.height = "40px";
+  // Track any company/deal mentioned in user text for "them"/"they" resolution
+  const tLower = text.toLowerCase();
+  const mentionedAction = ACTIONS.find(a => a.status === "open" && tLower.includes(a.company.toLowerCase()));
+  if (mentionedAction) _lastMentionedCompany = mentionedAction.company;
+  else {
+    const mentionedDeal = PIPELINE.find(d => tLower.includes(d.name.toLowerCase()));
+    if (mentionedDeal) _lastMentionedCompany = mentionedDeal.name;
+  }
   if (handleLocalCommand(text)) return;
   // Fallback: send to AI for a response
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Thinking...</div>`);
@@ -2292,7 +2458,10 @@ function sendChat() {
     body: JSON.stringify({ prompt: text }),
   }).then(r => r.json()).then(data => {
     const ts = new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});
-    const responseText = data.text || 'No response.';
+    let responseText = data.text || 'No response.';
+    // Append action chips if an item is selected
+    const selForChips = getSelected();
+    if (selForChips) responseText += renderActionChips(selForChips);
     // Update both chatHistory and DOM
     if (chatHistory[thinkingIdx]) {
       chatHistory[thinkingIdx].text = responseText;
@@ -2325,6 +2494,40 @@ function handleLocalCommand(text) {
   // Not interested
   if (t.match(/\b(not interested|pass on|not a fit|not for us|too early|not now|waste of time|spam|junk)\b/)) {
     if (sel) { addChat("agent", `✕ ${sel.company} — not a fit.`); archiveItem(sel.id); return true; }
+  }
+  // Deal stage / deal info queries
+  if (t.match(/\b(deal stage|current stage|what stage|which stage|where.* in.* pipeline|pipeline status|deal status)\b/)) {
+    let target = sel || findCompanyInText(t);
+    // Fall back to last-mentioned company
+    if (!target && _lastMentionedCompany) {
+      target = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany)
+        || { id: -1, company: _lastMentionedCompany, task: '', status: 'open' };
+    }
+    if (target) {
+      const deals = PIPELINE.filter(d => d.name.toLowerCase().includes(target.company.toLowerCase()));
+      if (deals.length > 0) {
+        let html = `<strong>${target.company} — Pipeline</strong>`;
+        deals.forEach(d => {
+          const stageLabel = STAGE_MAP[d.dealstage] || d.stage || 'Unknown';
+          html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:6px 0;font-size:12px;line-height:1.6;">`;
+          html += `<div><strong style="color:#fff;">${d.name}</strong> — <span style="color:#f59e0b;">${stageLabel}</span></div>`;
+          html += `<div style="color:#94a3b8;">${fmtMoney(d.amount)} · ${d.owner || 'Unassigned'}${d.close ? ' · Close: ' + new Date(d.close).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>`;
+          html += `</div>`;
+        });
+        html += renderActionChips(target);
+        addChat("agent", html);
+        return true;
+      }
+      addChat("agent", `No HubSpot deals found for ${target.company}.` + renderActionChips(target));
+      return true;
+    }
+    // Search pipeline directly
+    const deal = findDealInText(t);
+    if (deal) {
+      const stageLabel = STAGE_MAP[deal.dealstage] || deal.stage || 'Unknown';
+      addChat("agent", `<strong>${deal.name}</strong> — <span style="color:#f59e0b;">${stageLabel}</span><br><span style="color:#94a3b8;">${fmtMoney(deal.amount)} · ${deal.owner || 'Unassigned'}${deal.close ? ' · Close: ' + new Date(deal.close).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</span>`);
+      return true;
+    }
   }
   // Research
   if (t.match(/\b(who (is|are)|look.* up|research|what do we know|tell me (more|about)|background|check (on|this|them))\b/)) {
@@ -2377,15 +2580,38 @@ function handleLocalCommand(text) {
       return true;
     }
     // No company match — search Granola directly by keyword
-    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please|today)\b/g, '').trim();
-    if (keyword) {
+    // If "them"/"they" used, resolve to last-mentioned company
+    if (_lastMentionedCompany && t.match(/\b(them|they|their|it|this one|that one|same)\b/)) {
+      const resolved = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
+      if (resolved) { selectItem(resolved.id); showPostCallFlow(resolved); return true; }
+      // Not in ACTIONS but we know the company — search Granola by name
+      fetchGranolaBySearch(_lastMentionedCompany);
+      return true;
+    }
+    const keyword = t.replace(/\b(pull|up|my|the|get|granola|call|notes|from|recording|for|please|today|add|last|with|them|their|it)\b/g, '').replace(/\s+/g, ' ').trim();
+    if (keyword && keyword.length > 2) {
       fetchGranolaBySearch(keyword);
       return true;
     }
+    // Fallback: if nothing to search, use last-mentioned company
+    if (_lastMentionedCompany) {
+      fetchGranolaBySearch(_lastMentionedCompany);
+      return true;
+    }
   }
-  // Proposal / order form
-  if (t.match(/\b(order form|contract|proposal|generate proposal)\b/)) {
+  // Proposal / order form / pricing — with inline deal details detection
+  if (t.match(/\b(order form|contract|proposal|generate proposal|pricing|price|quote)\b/)) {
+    // Try to parse inline deal details (brand, spend, channels)
+    const parsed = parsePricingFromChat(text);
+    if (parsed) {
+      runChatPricing(parsed);
+      return true;
+    }
     if (sel) { showProposalModal(sel); return true; }
+    const match = findCompanyInText(t);
+    if (match) { selectItem(match.id); setTimeout(() => showProposalModal(match), 100); return true; }
+    // No match — check if follow-up message has deal details
+    // (will fall through to AI, which is fine)
   }
   // LinkedIn
   if (t.match(/\b(linkedin|connect on linkedin|send connection|li request)\b/)) {
@@ -2422,15 +2648,38 @@ function handleLocalCommand(text) {
     const match = findCompanyInText(t);
     if (match) { selectItem(match.id); setTimeout(() => { if(match.draftPrompt) runAction("draft"); }, 100); return true; }
   }
-  // HubSpot
-  if (t.match(/\b(hubspot|crm|update crm|log|update hub)\b/)) {
-    if (sel && sel.crmPrompt) { runAction("hubspot"); return true; }
+  // HubSpot — open editable CRM editor
+  if (t.match(/\b(hubspot|crm|update crm|log|update hub|deal stage|update deal|change.*hubspot|hubspot.*change|modify.*hubspot)\b/)) {
+    if (sel) { showCrmEditor(sel, _lastActionContext.analysis); return true; }
     const match = findCompanyInText(t);
-    if (match) { selectItem(match.id); setTimeout(() => { if(match.crmPrompt) runAction("hubspot"); }, 100); return true; }
+    if (match) { selectItem(match.id); setTimeout(() => showCrmEditor(match, _lastActionContext.analysis), 100); return true; }
+    // Also search pipeline deals directly
+    const deal = findDealInText(t);
+    if (deal) {
+      const synthItem = { id: -1, company: deal.name, task: '', status: 'open', dealValue: deal.amount };
+      showCrmEditor(synthItem, _lastActionContext.analysis);
+      return true;
+    }
+    // Last resort: use last-mentioned company
+    if (_lastMentionedCompany) {
+      const lastAction = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
+      if (lastAction) { selectItem(lastAction.id); setTimeout(() => showCrmEditor(lastAction, _lastActionContext.analysis), 100); return true; }
+      const lastDeal = PIPELINE.find(d => d.name.toLowerCase() === _lastMentionedCompany.toLowerCase());
+      if (lastDeal) {
+        const synthItem = { id: -1, company: lastDeal.name, task: '', status: 'open', dealValue: lastDeal.amount };
+        showCrmEditor(synthItem, _lastActionContext.analysis);
+        return true;
+      }
+    }
   }
   // (order form handled above with proposal)
   // Start
   if (t.match(/^(start|begin|go|let.?s go|ready|work|run through)/)) { startWork(); return true; }
+  // Deal details with spend + channels → auto-trigger pricing calc
+  // Catches messages like "ARMRA, $80M spend, DTC, Amazon, TikTok Shop, 5 Retailers"
+  const pricingParsed = parsePricingFromChat(text);
+  if (pricingParsed) { runChatPricing(pricingParsed); return true; }
+
   // Company name match
   const match = findCompanyInText(t);
   if (match && match.status === "open") { selectItem(match.id); return true; }
@@ -2440,7 +2689,34 @@ function handleLocalCommand(text) {
 
 function findCompanyInText(text) {
   const t = text.toLowerCase();
-  return ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+  // Direct company name match in ACTIONS
+  const directMatch = ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+  if (directMatch) { _lastMentionedCompany = directMatch.company; return directMatch; }
+  // Resolve "them" / "they" / "it" / "that" / "this one" to last-mentioned company
+  if (_lastMentionedCompany && t.match(/\b(them|they|their|it|this one|that one|that company|this company|same)\b/)) {
+    const resolved = ACTIONS.find(a => a.status === "open" && a.company === _lastMentionedCompany);
+    if (resolved) return resolved;
+  }
+  // Also check pipeline deals for company name match → find corresponding action
+  const deal = findDealInText(text);
+  if (deal) {
+    _lastMentionedCompany = deal.name;
+    const actionMatch = ACTIONS.find(a => a.status === "open" && a.company.toLowerCase() === deal.name.toLowerCase());
+    if (actionMatch) return actionMatch;
+  }
+  return null;
+}
+
+function findDealInText(text) {
+  const t = text.toLowerCase();
+  const stopWords = ['the','and','for','new','deal','with','from','prescient','test','demo'];
+  return PIPELINE.find(d => {
+    const name = d.name.toLowerCase();
+    if (t.includes(name)) return true;
+    // Check if any significant word (4+ chars, not a stop word) from the deal name appears
+    const words = name.split(/[\s\-–—\/,]+/).filter(w => w.length >= 4 && !stopWords.includes(w));
+    return words.some(w => t.includes(w));
+  });
 }
 
 async function fetchGranolaBySearch(keyword) {
@@ -2460,10 +2736,10 @@ async function fetchGranolaBySearch(keyword) {
       html += `<div style="font-size:11px;color:#64748b;margin-bottom:8px;">${new Date(n.createdAt).toLocaleDateString()} · ${attendees}</div>`;
       if (n.summaryText) html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.6;color:#94a3b8;max-height:300px;overflow-y:auto;white-space:pre-wrap;">${n.summaryMarkdown || n.summaryText}</div>`;
       else html += `<div style="color:#475569;font-size:12px;">No summary available.</div>`;
-      // Link to open post-call flow if there's a matching action
+      // Show action chips if there's a matching action item
       const match = ACTIONS.find(a => a.status === 'open' && (a.company.toLowerCase().includes(keyword.toLowerCase()) || keyword.toLowerCase().includes(a.company.toLowerCase())));
       if (match) {
-        html += `<div style="margin-top:8px;"><button class="btn-action" onclick="selectItem(${match.id});showPostCallFlow(ACTIONS.find(a=>a.id===${match.id}))">Run Post-Call for ${match.company} &rarr;</button></div>`;
+        html += renderActionChips(match, { granolaNote: n });
       }
       chatHistory[searchIdx] = { role: 'agent', text: html, ts: new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) };
     } else {
@@ -2479,14 +2755,10 @@ async function fetchGranolaBySearch(keyword) {
 
 async function runChainedPostCall(item, opts = {}) {
   const { quote, crm, draft } = opts;
-  const steps = ['Fetching call notes'];
-  if (quote) steps.push('generating proposal');
-  if (draft) steps.push('drafting email');
-  if (crm) steps.push('updating HubSpot');
 
-  addChat("agent", `<strong>${item.company}</strong> — ${steps.join(', ')}...`);
+  addChat("agent", `<strong>${item.company}</strong> — Fetching call notes...`);
 
-  // Step 1: Fetch Granola notes
+  // Step 1: Fetch Granola notes and show summary with action chips
   let granolaNote = null;
   let analysis = null;
   try {
@@ -2512,97 +2784,33 @@ async function runChainedPostCall(item, opts = {}) {
           html += `<div style="font-size:11px;color:#64748b;margin-top:4px;">Next steps: ${analysis.nextSteps.join(' · ')}</div>`;
         }
       }
+      // Show action chips — user reviews and clicks to proceed
+      html += renderActionChips(item, { granolaNote, analysis });
       addChat("agent", html);
     } else {
-      addChat("agent", `<span style="color:#f59e0b;">Granola notes not found for ${item.company}. Continuing with available context.</span>`);
+      let html = `<span style="color:#f59e0b;">Granola notes not found for ${item.company}. Use actions below with available context.</span>`;
+      html += renderActionChips(item, { granolaNote: null, analysis: null });
+      addChat("agent", html);
     }
   } catch {
-    addChat("agent", `<span style="color:#f59e0b;">Could not reach Granola. Continuing with available context.</span>`);
+    let html = `<span style="color:#f59e0b;">Could not reach Granola. Use actions below with available context.</span>`;
+    html += renderActionChips(item, { granolaNote: null, analysis: null });
+    addChat("agent", html);
   }
 
-  // Step 2: Generate proposal/quote if requested
-  if (quote) {
-    addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Generating proposal for ${item.company}...</div>`);
-    const quoteIdx = chatHistory.length - 1;
-    try {
-      const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
-      const notesContext = granolaNote?.summaryText || analysis?.summary || item.task || '';
-      const res = await fetch('/api/proposal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          company: item.company,
-          contactName: (granolaNote?.attendees || []).find(a => !(a.email || '').includes('prescient'))?.name || '',
-          contactEmail: (granolaNote?.attendees || []).find(a => !(a.email || '').includes('prescient'))?.email || '',
-          dealStage: deal?.stage || analysis?.suggestedDealStage || '',
-          notes: notesContext.substring(0, 2000),
-          slackChannel: 'commercial-dealdesk-agent',
-        }),
-      });
-      const data = await res.json();
-      const posted = data.slack?.posted;
-      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-      chatHistory[quoteIdx] = { role: 'agent', text: `<span style="color:#10b981;font-weight:600;">&#10003; Proposal generated</span> — ${item.company}${posted ? ' (posted to #dealdesk)' : ''}`, ts };
-    } catch (err) {
-      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-      chatHistory[quoteIdx] = { role: 'agent', text: `<span style="color:#ef4444;">Proposal failed: ${err.message}</span>`, ts };
-    }
-    const c = document.getElementById("chatMessages");
-    c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
-    c.scrollTop = c.scrollHeight;
+  // Queue up requested modals sequentially — each opens after the user acts
+  const _chainQueue = [];
+  if (quote) _chainQueue.push(() => showProposalModal(item));
+  if (draft) _chainQueue.push(() => showDraftModal(item, { granolaBody: granolaNote?.summaryText || '', callAnalysis: analysis }));
+  if (crm) _chainQueue.push(() => showCrmEditor(item, analysis));
+
+  // Open the first requested modal immediately (user reviews before submitting)
+  if (_chainQueue.length > 0) {
+    _chainQueue[0]();
+    // Store remaining modals so they can be triggered after close
+    window._pendingChainModals = _chainQueue.slice(1);
   }
 
-  // Step 3: Draft email if requested
-  if (draft) {
-    showDraftModal(item, {
-      granolaBody: granolaNote?.summaryText || '',
-      callAnalysis: analysis,
-    });
-  }
-
-  // Step 4: Update HubSpot if requested
-  if (crm) {
-    addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Updating HubSpot for ${item.company}...</div>`);
-    const crmIdx = chatHistory.length - 1;
-    try {
-      const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
-      const suggestedStage = analysis?.suggestedDealStage || null;
-      if (deal && suggestedStage) {
-        await crmDoUpdateStage(deal.id, suggestedStage, item.company, suggestedStage);
-      } else if (deal) {
-        // Log a note instead of changing stage
-        await fetch('/api/crm-update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'create_note',
-            dealId: deal.id,
-            body: `Post-call update: ${analysis?.summary || item.task || 'Call completed'}`,
-          }),
-        });
-        const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-        chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#10b981;font-weight:600;">&#10003; HubSpot updated</span> — note logged for ${item.company}`, ts };
-        const c = document.getElementById("chatMessages");
-        c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
-        c.scrollTop = c.scrollHeight;
-      } else {
-        const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-        chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#f59e0b;">No HubSpot deal found for ${item.company}. Use CRM button to create one.</span>`, ts };
-        const c = document.getElementById("chatMessages");
-        c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
-        c.scrollTop = c.scrollHeight;
-      }
-    } catch (err) {
-      const ts = new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-      chatHistory[crmIdx] = { role: 'agent', text: `<span style="color:#ef4444;">CRM update failed: ${err.message}</span>`, ts };
-      const c = document.getElementById("chatMessages");
-      c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
-      c.scrollTop = c.scrollHeight;
-    }
-  }
-
-  // Final summary
-  addChat("agent", `<strong>&#10003; ${item.company} pipeline complete.</strong> ${[quote && 'Proposal', draft && 'Email', crm && 'CRM'].filter(Boolean).join(' + ')} done.`);
   renderContextBar();
 }
 
@@ -2650,7 +2858,7 @@ function showTab(tab, skipHistory) {
 
   currentTab = tab;
   if (!skipHistory) selectedId = null; // deselect when switching tabs
-  document.querySelectorAll(".nav-item").forEach((n,i) => n.classList.toggle("active", (tab==="today"&&i===0)||(tab==="pipeline"&&i===1)||(tab==="leads"&&i===2)));
+  document.querySelectorAll(".nav-item").forEach((n,i) => n.classList.toggle("active", (tab==="today"&&i===0)||(tab==="pipeline"&&i===1)||(tab==="leads"&&i===2)||(tab==="pricing"&&i===3)));
 
   const open = getOpen();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
@@ -2676,6 +2884,8 @@ function showTab(tab, skipHistory) {
     renderPipelineView(main);
   } else if (tab === "leads") {
     renderLeadsView(main);
+  } else if (tab === "pricing") {
+    renderPricingView(main);
   }
 }
 
@@ -3187,6 +3397,434 @@ document.addEventListener("DOMContentLoaded", async () => {
   addChat("agent", welcome);
   renderContextBar();
 });
+
+// ═══════════════════════════════════════
+// VIEW 4: PRICING CALCULATOR
+// ═══════════════════════════════════════
+function renderPricingView(main) {
+  main.innerHTML = `
+  <h1>Pricing Calculator</h1>
+  <div class="subtitle">V3 GMV-tier model fees + media fee — calculate, review, generate proposals</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px;">
+    <!-- LEFT: Form -->
+    <div>
+      <div class="section">
+        <div class="section-header"><span class="section-title">Deal Details</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Brand Name *</label>
+            <input id="pBrand" class="search-input" style="width:100%;" placeholder="e.g. Acme Co">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">LTM Media Spend * ($)</label>
+            <input id="pSpend" class="search-input" style="width:100%;" type="number" placeholder="e.g. 5000000">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Sales Channels *</label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+              <label style="font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="pChDTC" value="DTC" onchange="pricingChannelToggle()"> DTC
+              </label>
+              <label style="font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="pChAmazon" value="Amazon" onchange="pricingChannelToggle()"> Amazon
+              </label>
+              <label style="font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="pChTikTok" value="TikTok Shop" onchange="pricingChannelToggle()"> TikTok Shop
+              </label>
+              <label style="font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                <input type="checkbox" id="pChRetail" value="Retail" onchange="pricingChannelToggle()"> Retail
+              </label>
+            </div>
+          </div>
+          <div id="pRetailFields" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div>
+                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;"># Retail Channels</label>
+                <input id="pRetailCount" class="search-input" style="width:100%;" type="number" value="1" min="1">
+              </div>
+              <div>
+                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Retailer Names</label>
+                <input id="pRetailNames" class="search-input" style="width:100%;" placeholder="QVC, Ulta, Target">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" id="pGmvSection" style="display:none;">
+        <div class="section-header"><span class="section-title">Channel GMV (Optional)</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="pGmvFields"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header"><span class="section-title">Discount &amp; Terms</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Discount %</label>
+            <input id="pDiscount" class="search-input" style="width:100%;" type="number" value="0" min="0" max="100">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Discount Type</label>
+            <select id="pDiscountType" class="search-input" style="width:100%;">
+              <option value="none">None</option>
+              <option value="base_fee">Model Fees</option>
+              <option value="variable_fee">Media Fee</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Payment Terms</label>
+            <select id="pPayment" class="search-input" style="width:100%;">
+              <option value="Semi-Annual Net 7" selected>Semi-Annual Net 7</option>
+              <option value="Quarterly Net 7">Quarterly Net 7</option>
+              <option value="Quarterly Net 30">Quarterly Net 30</option>
+              <option value="Monthly Net 7">Monthly Net 7</option>
+              <option value="Monthly Net 30">Monthly Net 30</option>
+              <option value="Annual Net 7">Annual Net 7</option>
+              <option value="Annual Net 30">Annual Net 30</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Contract Term (months)</label>
+            <input id="pTerm" class="search-input" style="width:100%;" type="number" value="12" min="1">
+          </div>
+        </div>
+      </div>
+
+      <details style="margin-bottom:16px;">
+        <summary style="font-size:11px;color:#64748b;cursor:pointer;margin-bottom:8px;">Advanced Options</summary>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Custom Base Fee ($/mo/channel)</label>
+            <input id="pCustomBase" class="search-input" style="width:100%;" type="number" placeholder="Override GMV tiers">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Variable Rate Multiplier</label>
+            <input id="pRateMultiplier" class="search-input" style="width:100%;" type="number" step="0.1" placeholder="1.0 = standard">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Additional Discount ($)</label>
+            <input id="pAddlDiscount" class="search-input" style="width:100%;" type="number" placeholder="Fixed dollar off">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Excluded Spend ($)</label>
+            <input id="pExcluded" class="search-input" style="width:100%;" type="number" placeholder="Non-managed spend">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Opt-Out Period (months)</label>
+            <input id="pOptOut" class="search-input" style="width:100%;" type="number" value="6" min="0">
+          </div>
+        </div>
+      </details>
+
+      <button onclick="runPricingCalc()" style="width:100%;padding:10px;border-radius:8px;background:#1e40af;color:#93c5fd;font-size:13px;font-weight:700;">
+        Calculate Pricing
+      </button>
+    </div>
+
+    <!-- RIGHT: Results -->
+    <div id="pricingResults" style="min-height:200px;">
+      <div style="text-align:center;padding:60px 20px;color:#334155;font-size:13px;">
+        Fill in deal details and click <strong>Calculate Pricing</strong>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Chat → Pricing: parse natural language deal details ──
+function parsePricingFromChat(text) {
+  const t = text.toLowerCase();
+  const spendMatch = text.match(/\$\s*([\d,]+(?:\.\d+)?)\s*(m(?:illion)?|mm|k)?(?:\s+(?:in\s+)?(?:spend|media|ltm))?/i)
+    || text.match(/(?:spend|media|ltm)[^$]*\$\s*([\d,]+(?:\.\d+)?)\s*(m(?:illion)?|mm|k)?/i)
+    || text.match(/([\d,]+(?:\.\d+)?)\s*(m(?:illion)?|mm)\b/i);
+  if (!spendMatch) return null;
+  let spend = parseFloat(spendMatch[1].replace(/,/g, ''));
+  const unit = (spendMatch[2] || '').toLowerCase();
+  if (unit.startsWith('m')) spend *= 1_000_000;
+  else if (unit === 'k') spend *= 1_000;
+  if (spend < 1000) return null;
+  const channels = [];
+  if (t.match(/\bdtc\b|direct.to.consumer|shopify/)) channels.push('DTC');
+  if (t.match(/\bamazon\b|amz\b/)) channels.push('Amazon');
+  if (t.match(/\btik\s?tok/)) channels.push('TikTok Shop');
+  let retailCount = 0;
+  const retailMatch = t.match(/(\d+)\s*retail(?:er)?s?/);
+  if (retailMatch) { retailCount = parseInt(retailMatch[1]); channels.push('Retail'); }
+  else if (t.match(/\bretail\b/)) { retailCount = 1; channels.push('Retail'); }
+  if (!channels.length) return null;
+  const skipWords = new Set(['the','brand','is','has','have','they','with','and','in','spend','media','ltm','create','generate','proposal','order','form','pricing','price','quote','contract','for','a','an','million','dtc','amazon','tiktok','shop','retail','retailers','channels','channel','i','want','to','my','me','can','you','please','make','build','draft','up']);
+  const quotedMatch = text.match(/["']([^"']+)["']/);
+  let brandName = null;
+  if (quotedMatch) { brandName = quotedMatch[1]; }
+  else {
+    const words = text.split(/[\s,]+/);
+    const brandWords = [];
+    for (const w of words) {
+      const clean = w.replace(/[^a-zA-Z0-9]/g, '');
+      if (!clean) continue;
+      if (clean[0] === clean[0].toUpperCase() && clean[0] !== clean[0].toLowerCase() && !skipWords.has(clean.toLowerCase()) && !clean.match(/^\$/) && !clean.match(/^\d/)) brandWords.push(clean);
+    }
+    if (brandWords.length) brandName = brandWords.join(' ');
+  }
+  if (!brandName) brandName = 'Unknown Brand';
+  return { brandName, ltmMediaSpend: spend, enabledChannels: channels, numberOfRetailChannels: retailCount || 1 };
+}
+
+async function runChatPricing(parsed) {
+  const channelsStr = parsed.enabledChannels.join(', ');
+  const spendStr = '$' + parsed.ltmMediaSpend.toLocaleString();
+  addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Calculating pricing for <strong>${parsed.brandName}</strong> — ${spendStr} across ${channelsStr}...</div>`);
+  const thinkingIdx = chatHistory.length - 1;
+  try {
+    const res = await fetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed) });
+    const data = await res.json();
+    if (!res.ok || !data.success) { chatHistory[thinkingIdx].text = `<div style="color:#ef4444;">${data.error || 'Calculation failed'}</div>`; refreshChat(); return; }
+    const p = data.pricing, a = data.approval;
+    const fmtM = (n) => '$' + (n||0).toLocaleString('en-US', {maximumFractionDigits:0});
+    const fmtM2 = (n) => '$' + (n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    let badge;
+    if (a.status === 'auto_approved') badge = '<span style="background:rgba(16,185,129,0.15);color:#10b981;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;">AUTO-APPROVED</span>';
+    else if (a.status === 'requires_dealdesk') badge = '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;">DEAL DESK REQUIRED</span>';
+    else badge = '<span style="background:rgba(239,68,68,0.15);color:#ef4444;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;">HARD STOP</span>';
+    const dealdeskReasons = a.reasons.filter(r => r.severity === 'dealdesk').map(r => `<div style="font-size:11px;color:#f59e0b;">- ${r.message}</div>`).join('');
+    const breakdownHtml = p.baseFeeBreakdown.map(b => {
+      const tier = b.gmvTier ? ` <span style="color:#64748b;font-size:10px;">(${b.gmvTier})</span>` : '';
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${b.channel}${tier}</span><span>${fmtM(b.discountedMonthlyFee || b.monthlyFee)}/mo</span></div>`;
+    }).join('');
+    let html = `<strong>Pricing: ${p.brandName}</strong> ${badge}`;
+    html += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:12px;margin:8px 0;">`;
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">`;
+    html += `<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#22d3ee;">${fmtM2(p.totalMonthly)}</div><div style="font-size:9px;color:#64748b;">MONTHLY</div></div>`;
+    html += `<div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#10b981;">${fmtM2(p.totalAnnual)}</div><div style="font-size:9px;color:#64748b;">ANNUAL</div></div>`;
+    html += `</div>`;
+    html += `<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Effective Rate: <strong style="color:#f59e0b;">${p.effectiveRatePercent.toFixed(3)}%</strong> of ${fmtM(p.ltmMediaSpend)} LTM spend</div>`;
+    html += `<div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:4px;">Model Fees</div>${breakdownHtml}`;
+    html += `<div style="font-size:11px;color:#94a3b8;font-weight:600;margin-top:8px;margin-bottom:4px;">Media Fee</div>`;
+    html += `<div style="font-size:12px;display:flex;justify-content:space-between;"><span>${((p.tierBreakdown[0]?.rate||0.005)*100).toFixed(2)}% of LTM Spend</span><span>${fmtM(p.variableFeeAnnual)}/yr</span></div>`;
+    if (dealdeskReasons) html += `<div style="margin-top:8px;border-top:1px solid #1e293b;padding-top:6px;">${dealdeskReasons}</div>`;
+    html += `</div>`;
+    html += `<div style="display:flex;gap:6px;margin-top:4px;"><button class="btn-action" onclick="pricingChatGenerateProposal()">Generate Order Form</button><button class="btn-sm" onclick="showTab('pricing')">Open Calculator</button><button class="btn-sm" onclick="pricingChatCopySummary()">Copy</button></div>`;
+    html += `<div id="chatProposalResult"></div>`;
+    chatHistory[thinkingIdx].text = html;
+    refreshChat();
+    _lastPricingInput = parsed;
+    _lastChatPricingSummary = data.summary;
+  } catch (err) { chatHistory[thinkingIdx].text = `<div style="color:#ef4444;">Pricing error: ${err.message}</div>`; refreshChat(); }
+}
+
+let _lastChatPricingSummary = null;
+
+async function pricingChatGenerateProposal() {
+  if (!_lastPricingInput) { showToast('No pricing data'); return; }
+  const resultDiv = document.getElementById('chatProposalResult');
+  if (!resultDiv) return;
+  resultDiv.innerHTML = '<div style="font-size:11px;color:#64748b;margin-top:6px;">Generating order form...</div>';
+  try {
+    const res = await fetch('/api/proposal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: _lastPricingInput.brandName, pricing: _lastPricingInput }) });
+    const data = await res.json();
+    if (data.success) {
+      resultDiv.innerHTML = `<div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;margin-top:6px;"><div style="font-size:10px;color:#10b981;font-weight:600;margin-bottom:4px;">Order Form${data.slack?.posted ? ' — Posted to Slack' : ''}</div><pre style="font-size:10px;color:#94a3b8;white-space:pre-wrap;max-height:200px;overflow:auto;font-family:monospace;">${(data.orderForm||'').replace(/</g,'&lt;')}</pre></div>`;
+    } else { resultDiv.innerHTML = `<div style="color:#ef4444;font-size:11px;margin-top:6px;">${data.error||'Failed'}</div>`; }
+  } catch(e) { resultDiv.innerHTML = `<div style="color:#ef4444;font-size:11px;margin-top:6px;">Error: ${e.message}</div>`; }
+}
+
+function pricingChatCopySummary() {
+  if (_lastChatPricingSummary) copyToClipboard(_lastChatPricingSummary);
+  else showToast('No summary to copy');
+}
+
+function refreshChat() {
+  const c = document.getElementById("chatMessages");
+  c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+  c.scrollTop = c.scrollHeight;
+}
+
+function pricingChannelToggle() {
+  const retail = document.getElementById('pChRetail');
+  const retailFields = document.getElementById('pRetailFields');
+  if (retail && retailFields) retailFields.style.display = retail.checked ? 'block' : 'none';
+
+  const channels = [];
+  if (document.getElementById('pChDTC')?.checked) channels.push({ id: 'pGmvDTC', label: 'DTC GMV ($)' });
+  if (document.getElementById('pChAmazon')?.checked) channels.push({ id: 'pGmvAmazon', label: 'Amazon GMV ($)' });
+  if (document.getElementById('pChTikTok')?.checked) channels.push({ id: 'pGmvTikTok', label: 'TikTok Shop GMV ($)' });
+  if (document.getElementById('pChRetail')?.checked) channels.push({ id: 'pGmvRetail', label: 'Retail GMV ($)' });
+
+  const gmvSection = document.getElementById('pGmvSection');
+  const gmvFields = document.getElementById('pGmvFields');
+  if (channels.length > 0) {
+    gmvSection.style.display = 'block';
+    gmvFields.innerHTML = channels.map(c =>
+      `<div><label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">${c.label}</label>` +
+      `<input id="${c.id}" class="search-input" style="width:100%;" type="number" placeholder="Optional"></div>`
+    ).join('');
+  } else {
+    gmvSection.style.display = 'none';
+    gmvFields.innerHTML = '';
+  }
+}
+
+let _lastPricingInput = null;
+
+async function runPricingCalc() {
+  const brand = document.getElementById('pBrand')?.value?.trim();
+  const spend = parseFloat(document.getElementById('pSpend')?.value);
+  if (!brand) { showToast('Brand name required'); return; }
+  if (!spend || spend <= 0) { showToast('LTM Media Spend required'); return; }
+
+  const channels = [];
+  if (document.getElementById('pChDTC')?.checked) channels.push('DTC');
+  if (document.getElementById('pChAmazon')?.checked) channels.push('Amazon');
+  if (document.getElementById('pChTikTok')?.checked) channels.push('TikTok Shop');
+  if (document.getElementById('pChRetail')?.checked) channels.push('Retail');
+  if (!channels.length) { showToast('Select at least one channel'); return; }
+
+  const input = {
+    brandName: brand,
+    ltmMediaSpend: spend,
+    enabledChannels: channels,
+    numberOfRetailChannels: parseInt(document.getElementById('pRetailCount')?.value) || 1,
+    retailerNames: document.getElementById('pRetailNames')?.value?.split(',').map(s => s.trim()).filter(Boolean) || null,
+    dtcGmv: parseFloat(document.getElementById('pGmvDTC')?.value) || null,
+    amazonGmv: parseFloat(document.getElementById('pGmvAmazon')?.value) || null,
+    tiktokGmv: parseFloat(document.getElementById('pGmvTikTok')?.value) || null,
+    retailGmv: parseFloat(document.getElementById('pGmvRetail')?.value) || null,
+    requestedDiscountPercent: parseFloat(document.getElementById('pDiscount')?.value) || null,
+    discountType: document.getElementById('pDiscountType')?.value || 'none',
+    paymentTerms: document.getElementById('pPayment')?.value || 'Semi-Annual Net 7',
+    termMonths: parseInt(document.getElementById('pTerm')?.value) || 12,
+    optOutMonths: parseInt(document.getElementById('pOptOut')?.value),
+    customBaseFeeMonthly: parseFloat(document.getElementById('pCustomBase')?.value) || null,
+    variableRateMultiplier: parseFloat(document.getElementById('pRateMultiplier')?.value) || null,
+    additionalDiscountAmount: parseFloat(document.getElementById('pAddlDiscount')?.value) || null,
+    excludedOrNonManagedSpend: parseFloat(document.getElementById('pExcluded')?.value) || null,
+  };
+
+  _lastPricingInput = input;
+  const resultsDiv = document.getElementById('pricingResults');
+  resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Calculating...</div>';
+
+  try {
+    const res = await fetch('/api/pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      resultsDiv.innerHTML = `<div style="color:#ef4444;padding:20px;">${data.error || 'Calculation failed'}${data.validationErrors ? '<br>' + data.validationErrors.join('<br>') : ''}</div>`;
+      return;
+    }
+    renderPricingResults(data, resultsDiv);
+  } catch (err) {
+    resultsDiv.innerHTML = `<div style="color:#ef4444;padding:20px;">Error: ${err.message}</div>`;
+  }
+}
+
+function renderPricingResults(data, container) {
+  const p = data.pricing;
+  const a = data.approval;
+  const fmtMoney = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtMoney2 = (n) => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  let approvalBadge;
+  if (a.status === 'auto_approved') {
+    approvalBadge = '<span style="background:rgba(16,185,129,0.15);color:#10b981;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;">Auto-Approved</span>';
+  } else if (a.status === 'requires_dealdesk') {
+    approvalBadge = '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;">Requires Deal Desk</span>';
+  } else {
+    approvalBadge = '<span style="background:rgba(239,68,68,0.15);color:#ef4444;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;">Hard Stop</span>';
+  }
+
+  const reasons = a.reasons.filter(r => r.severity !== 'info').map(r =>
+    `<div style="font-size:11px;color:${r.severity === 'dealdesk' ? '#f59e0b' : '#ef4444'};margin-top:3px;">- ${r.message}</div>`
+  ).join('');
+
+  const breakdownRows = p.baseFeeBreakdown.map(b => {
+    const tier = b.gmvTier ? `<span style="font-size:10px;color:#64748b;">${b.gmvTier}</span>` : '';
+    const fee = b.discountedMonthlyFee != null
+      ? `<span style="text-decoration:line-through;color:#64748b;">${fmtMoney(b.monthlyFee)}</span> ${fmtMoney(b.discountedMonthlyFee)}`
+      : fmtMoney(b.monthlyFee);
+    return `<tr style="border-bottom:1px solid #1e293b;"><td style="padding:6px 8px;font-size:12px;">${b.channel} ${tier}</td><td style="padding:6px 8px;font-size:12px;text-align:right;">${fee}/mo</td><td style="padding:6px 8px;font-size:12px;text-align:right;">${fmtMoney(b.discountedAnnualFee || b.annualFee)}/yr</td></tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="margin-bottom:12px;">${approvalBadge}</div>
+    ${reasons ? `<div style="margin-bottom:12px;">${reasons}</div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+      <div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#22d3ee;">${fmtMoney2(p.totalMonthly)}</div>
+        <div style="font-size:10px;color:#64748b;">MONTHLY</div>
+      </div>
+      <div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#10b981;">${fmtMoney2(p.totalAnnual)}</div>
+        <div style="font-size:10px;color:#64748b;">ANNUAL</div>
+      </div>
+      <div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:700;color:#f59e0b;">${p.effectiveRatePercent.toFixed(3)}%</div>
+        <div style="font-size:10px;color:#64748b;">EFF. RATE</div>
+      </div>
+      <div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;text-align:center;">
+        <div style="font-size:16px;font-weight:700;color:#a855f7;">${fmtMoney(p.ltmMediaSpend)}</div>
+        <div style="font-size:10px;color:#64748b;">LTM SPEND</div>
+      </div>
+    </div>
+    ${p.discountPercent ? `<div style="font-size:11px;color:#f59e0b;margin-bottom:12px;">Discount: ${p.discountPercent}% (-${fmtMoney(p.discountAmount)}) | List: ${fmtMoney(p.listPriceAnnual)}/yr</div>` : ''}
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Model Fee Breakdown</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr style="border-bottom:1px solid #334155;"><th style="font-size:10px;color:#475569;text-align:left;padding:4px 8px;">Channel</th><th style="font-size:10px;color:#475569;text-align:right;padding:4px 8px;">Monthly</th><th style="font-size:10px;color:#475569;text-align:right;padding:4px 8px;">Annual</th></tr>
+        ${breakdownRows}
+      </table>
+      <div style="font-size:12px;color:#cbd5e1;margin-top:6px;text-align:right;font-weight:600;">Total Model Fees: ${fmtMoney(p.baseFeeAnnual)}/yr</div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Media Fee</div>
+      <div style="font-size:12px;color:#cbd5e1;">Rate: ${(p.tierBreakdown[0]?.rate * 100 || 0.5).toFixed(2)}% of LTM Spend</div>
+      <div style="font-size:12px;color:#cbd5e1;">Total: ${fmtMoney(p.variableFeeAnnual)}/yr (${fmtMoney(p.variableFeeMonthly)}/mo)</div>
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:16px;">
+      Term: ${p.termMonths}mo | Payment: ${p.paymentTerms} | Opt-out: ${p.optOutMonths}mo
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="pricingGenerateProposal()" style="flex:1;padding:8px;border-radius:6px;background:#1e40af;color:#93c5fd;font-size:12px;font-weight:600;">Generate Order Form</button>
+      <button onclick="pricingCopySummary()" style="flex:1;padding:8px;border-radius:6px;background:transparent;border:1px solid #334155;color:#94a3b8;font-size:12px;font-weight:600;">Copy Summary</button>
+    </div>
+    <div id="pProposalResult" style="margin-top:12px;"></div>
+  `;
+  container._summary = data.summary;
+}
+
+async function pricingGenerateProposal() {
+  if (!_lastPricingInput) { showToast('Run pricing calculation first'); return; }
+  const resultDiv = document.getElementById('pProposalResult');
+  resultDiv.innerHTML = '<div style="font-size:12px;color:#64748b;">Generating order form...</div>';
+  try {
+    const res = await fetch('/api/proposal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: _lastPricingInput.brandName, pricing: _lastPricingInput }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      resultDiv.innerHTML = `
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-top:8px;">
+          <div style="font-size:11px;color:#10b981;font-weight:600;margin-bottom:6px;">Order Form Generated${data.slack?.posted ? ' & Posted to Slack' : ''}</div>
+          <pre style="font-size:11px;color:#94a3b8;white-space:pre-wrap;max-height:300px;overflow:auto;font-family:monospace;">${(data.orderForm || '').replace(/</g,'&lt;')}</pre>
+        </div>`;
+    } else {
+      resultDiv.innerHTML = `<div style="color:#ef4444;font-size:12px;">${data.error || 'Failed'}</div>`;
+    }
+  } catch (err) {
+    resultDiv.innerHTML = `<div style="color:#ef4444;font-size:12px;">Error: ${err.message}</div>`;
+  }
+}
+
+function pricingCopySummary() {
+  const container = document.getElementById('pricingResults');
+  const summary = container?._summary;
+  if (!summary) { showToast('No pricing to copy'); return; }
+  copyToClipboard(summary);
+}
 
 showTab("today", true); // Initial render — no history push
 history.replaceState({ tab: 'today', selectedId: null }, '', '#today');
