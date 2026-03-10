@@ -1,12 +1,12 @@
 {
-  "name": "cos-agent",
-  "version": "0.1.0",
-  "description": "Prescient COS — Community Operating System dashboard",
+  "name": "prescient-cos",
+  "version": "2.0.0",
   "private": true,
-  "engines": {
-    "node": ">=18"
-  },
+  "type": "module",
   "scripts": {
-    "start": "npx serve public"
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "@vercel/kv": "^2.0.0"
   }
 }

@@ -1,53 +1,1187 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prescient COS — Dashboard</title>
-  <link rel="stylesheet" href="/styles.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prescient AI — Chief of Staff</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0e1a; color: #e2e8f0; min-height: 100vh; }
+  a { color: #60a5fa; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { cursor: pointer; border: none; font-family: inherit; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 5px; transition: all 0.15s; }
+  button:active { transform: scale(0.96); }
+  .layout { display: flex; height: 100vh; }
+
+  /* SIDEBAR */
+  .sidebar { width: 200px; background: #0f1525; border-right: 1px solid #1e293b; padding: 20px 14px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .sidebar h2 { font-size: 14px; color: #fff; font-weight: 700; margin-bottom: 4px; }
+  .sidebar .sub { font-size: 11px; color: #10b981; margin-bottom: 20px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; color: #94a3b8; font-size: 13px; cursor: pointer; margin-bottom: 2px; }
+  .nav-item:hover, .nav-item.active { background: #1e293b; color: #fff; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .nav-item .count { margin-left: auto; font-size: 10px; background: #1e293b; color: #64748b; padding: 1px 6px; border-radius: 8px; }
+  .sidebar .spacer { flex: 1; }
+  .sidebar .user { font-size: 12px; color: #64748b; border-top: 1px solid #1e293b; padding-top: 12px; }
+  .sidebar .user strong { color: #cbd5e1; display: block; }
+
+  /* CENTER */
+  .center { flex: 1; overflow-y: auto; padding: 24px 28px; }
+  .center h1 { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .center .subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; }
+
+  /* SECTION HEADERS */
+  .section { margin-bottom: 28px; }
+  .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .section-icon { font-size: 16px; }
+  .section-title { font-size: 13px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+  .section-count { font-size: 10px; color: #475569; background: #1e293b; padding: 1px 6px; border-radius: 8px; }
+  .section-empty { font-size: 13px; color: #334155; padding: 12px 16px; font-style: italic; }
+
+  /* MEETING CARD (Today → Up Next) */
+  .mtg-card { background: #111827; border: 2px solid #1e293b; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; }
+  .mtg-card:hover { border-color: #334155; }
+  .mtg-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.06); }
+  .mtg-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .mtg-date { font-size: 11px; color: #10b981; font-weight: 700; background: rgba(16,185,129,0.12); padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+  .mtg-title { font-size: 14px; font-weight: 600; color: #fff; flex: 1; }
+  .mtg-people { font-size: 11px; color: #64748b; }
+  .mtg-summary { font-size: 12px; color: #94a3b8; line-height: 1.5; margin-bottom: 6px; }
+  .mtg-action { font-size: 12px; color: #f59e0b; font-weight: 500; }
+  .mtg-btns { display: flex; gap: 6px; margin-top: 8px; }
+
+  /* ITEMS (Reply Now, CRM Gaps, Leads) */
+  .item { background: #111827; border: 2px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-bottom: 6px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; transition: all 0.15s; position: relative; }
+  .item:hover { border-color: #334155; }
+  .item.selected { border-color: #3b82f6; background: rgba(59,130,246,0.06); }
+  .item .company { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+  .item .body { flex: 1; min-width: 0; }
+  .item .body .task { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+  .item .body .meta { font-size: 11px; color: #64748b; margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .item .actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
+  .badge-overdue { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: rgba(239,68,68,0.15); color: #ef4444; }
+  .badge-stale { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .badge-fresh { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: rgba(16,185,129,0.15); color: #10b981; }
+  .deal-val { font-size: 10px; color: #10b981; font-weight: 600; }
+  .owner-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+  .owner-mike { background: rgba(96,165,250,0.15); color: #60a5fa; }
+  .owner-brian { background: rgba(168,85,247,0.15); color: #a855f7; }
+  .owner-will { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .owner-other { background: rgba(100,116,139,0.15); color: #94a3b8; }
+  .btn-link { background: transparent; color: #64748b; border: 1px solid #334155; }
+  .btn-link:hover { color: #cbd5e1; border-color: #475569; }
+  .btn-sm { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: transparent; border: 1px solid #334155; color: #94a3b8; }
+  .btn-sm:hover { border-color: #60a5fa; color: #60a5fa; }
+  .btn-action { font-size: 10px; padding: 4px 10px; border-radius: 4px; background: #1e40af; color: #93c5fd; }
+  .btn-action:hover { background: #1d4ed8; }
+
+  .tag { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
+  .tg { background: rgba(16,185,129,0.15); color: #10b981; }
+  .tb { background: rgba(96,165,250,0.15); color: #60a5fa; }
+  .ta { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .tr { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .tp { background: rgba(168,85,247,0.15); color: #a855f7; }
+  .done-item { opacity: 0.4; cursor: default; }
+  .done-item .task { text-decoration: line-through; }
+  .archived-item { display: none; }
+
+  /* SEARCH BAR (Leads) */
+  .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search-input { flex: 1; background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; color: #e2e8f0; font-size: 13px; font-family: inherit; outline: none; }
+  .search-input::placeholder { color: #475569; }
+  .search-input:focus { border-color: #3b82f6; }
+  .filter-btn { padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #111827; border: 1px solid #1e293b; color: #94a3b8; cursor: pointer; }
+  .filter-btn:hover, .filter-btn.active { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.08); }
+  .ai-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: rgba(168,85,247,0.15); color: #a855f7; }
+
+  /* PIPELINE TABLE */
+  .pipe-table { width: 100%; border-collapse: collapse; }
+  .pipe-table th { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.8px; text-align: left; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+  .pipe-table td { font-size: 13px; padding: 10px 12px; border-bottom: 1px solid rgba(30,41,59,0.4); }
+  .pipe-table tr:hover { background: rgba(30,41,59,0.3); }
+  .pipe-table .deal-name { color: #cbd5e1; font-weight: 500; }
+  .pipe-table .deal-amount { color: #10b981; font-weight: 600; }
+  .stage-pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
+
+  /* CHAT PANEL */
+  .chat-panel { width: 370px; background: #0f1525; border-left: 1px solid #1e293b; display: flex; flex-direction: column; flex-shrink: 0; }
+  .chat-header { padding: 14px 18px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
+  .chat-header .pulse { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .chat-header h3 { font-size: 14px; font-weight: 600; color: #fff; }
+  .chat-header .badge { font-size: 10px; background: rgba(16,185,129,0.15); color: #10b981; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .chat-msg { max-width: 92%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-wrap: break-word; }
+  .chat-msg.agent { background: #1e293b; color: #cbd5e1; align-self: flex-start; border-bottom-left-radius: 4px; }
+  .chat-msg.user { background: #1e40af; color: #dbeafe; align-self: flex-end; border-bottom-right-radius: 4px; }
+  .chat-msg .ts { font-size: 10px; color: #475569; margin-top: 4px; }
+  .chat-msg.user .ts { color: rgba(219,234,254,0.5); }
+
+  /* CONTEXT BAR */
+  .context-bar { padding: 10px 16px; border-top: 1px solid #1e293b; background: #111827; }
+  .ctx-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .ctx-company { font-size: 13px; font-weight: 700; color: #fff; flex: 1; }
+  .ctx-status-btns { display: flex; gap: 4px; }
+  .ctx-status-btns button { font-size: 10px; padding: 3px 8px; border-radius: 4px; }
+  .ctx-actions { display: flex; gap: 6px; }
+  .ctx-btn { padding: 8px 0; border-radius: 6px; font-size: 12px; font-weight: 600; flex: 1; text-align: center; }
+  .ctx-primary { background: #1e40af; color: #93c5fd; }
+  .ctx-primary:hover { background: #1d4ed8; }
+  .ctx-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .ctx-secondary:hover { color: #cbd5e1; border-color: #475569; }
+  .ctx-slack { background: #4A154B; color: #E8D5E8; }
+  .ctx-slack:hover { background: #5b1f5e; }
+  .ctx-done-btn { background: transparent; color: #10b981; border: 1px solid #1e293b; }
+  .ctx-done-btn:hover { border-color: #10b981; }
+  .ctx-skip-btn { background: transparent; color: #64748b; border: 1px solid transparent; }
+  .ctx-skip-btn:hover { color: #94a3b8; }
+  .ctx-archive-btn { background: transparent; color: #475569; border: 1px solid transparent; }
+  .ctx-archive-btn:hover { color: #ef4444; }
+
+  /* QUICK CHIPS */
+  .quick-chip { font-size: 11px; padding: 5px 10px; border-radius: 14px; background: #111827; border: 1px solid #1e293b; color: #94a3b8; cursor: pointer; transition: all 0.15s; display: inline-block; }
+  .quick-chip:hover { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.08); }
+
+  /* INPUT */
+  .chat-input-area { padding: 12px 16px; border-top: 1px solid #1e293b; display: flex; gap: 8px; align-items: flex-end; }
+  .chat-input { flex: 1; background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 14px; color: #e2e8f0; font-size: 13px; font-family: inherit; resize: none; outline: none; min-height: 40px; max-height: 120px; line-height: 1.4; }
+  .chat-input::placeholder { color: #475569; }
+  .chat-input:focus { border-color: #3b82f6; }
+  .chat-send { width: 36px; height: 36px; border-radius: 50%; background: #1e40af; color: #93c5fd; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; padding: 0; }
+  .chat-send:hover { background: #1d4ed8; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #10b981; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+
+  /* DROPDOWN ACTION MENU */
+  .action-group { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
+  .action-primary { font-size: 11px; padding: 6px 14px; border-radius: 6px 0 0 6px; background: #1e40af; color: #93c5fd; font-weight: 600; white-space: nowrap; }
+  .action-primary:hover { background: #1d4ed8; }
+  .action-primary.green { background: rgba(16,185,129,0.2); color: #10b981; }
+  .action-primary.green:hover { background: rgba(16,185,129,0.3); }
+  .action-primary.purple { background: rgba(168,85,247,0.2); color: #a855f7; }
+  .action-primary.purple:hover { background: rgba(168,85,247,0.3); }
+  .action-chevron { font-size: 11px; padding: 6px 8px; border-radius: 0 6px 6px 0; background: #1e40af; color: #93c5fd; border-left: 1px solid rgba(147,197,253,0.2); position: relative; }
+  .action-chevron:hover { background: #1d4ed8; }
+  .action-chevron.green { background: rgba(16,185,129,0.2); color: #10b981; border-left-color: rgba(16,185,129,0.3); }
+  .action-chevron.green:hover { background: rgba(16,185,129,0.3); }
+  .action-chevron.purple { background: rgba(168,85,247,0.2); color: #a855f7; border-left-color: rgba(168,85,247,0.3); }
+  .action-chevron.purple:hover { background: rgba(168,85,247,0.3); }
+  .action-dropdown { display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 4px 0; min-width: 180px; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+  .action-dropdown.open { display: block; }
+  .action-dropdown-item { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 12px; color: #cbd5e1; cursor: pointer; white-space: nowrap; background: transparent; width: 100%; text-align: left; border-radius: 0; }
+  .action-dropdown-item:hover { background: #334155; color: #fff; }
+  .action-dropdown-item .dd-icon { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+  .action-dropdown-item.danger { color: #ef4444; }
+  .action-dropdown-item.danger:hover { background: rgba(239,68,68,0.1); }
+  .slack-opt { display: block; width: 100%; text-align: left; padding: 7px 14px; font-size: 13px; color: #cbd5e1; background: transparent; border: none; cursor: pointer; font-family: inherit; }
+  .slack-opt:hover { background: #334155; color: #fff; }
+  .dd-sep { height: 1px; background: #334155; margin: 4px 0; }
+</style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1><span>Prescient</span> COS</h1>
-      <p id="org-motto">Community Operating System</p>
-    </div>
-    <p id="org-name"></p>
-  </header>
-
-  <div class="dashboard">
-    <div id="metrics" class="metrics-grid">
-      <div class="loading">Loading metrics...</div>
-    </div>
-
-    <div class="two-col">
-      <div class="card">
-        <h2>Weekly Attendance</h2>
-        <div id="chart" class="chart-container">
-          <div class="loading">Loading chart...</div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Recent Activity</h2>
-        <div id="checkins">
-          <div class="loading">Loading...</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:1.5rem">
-      <h2>Upcoming Events</h2>
-      <div id="events">
-        <div class="loading">Loading events...</div>
-      </div>
-    </div>
-
-    <h2 class="section-title">Small Groups</h2>
-    <div id="groups" class="groups-grid">
-      <div class="loading">Loading groups...</div>
+<div class="layout">
+  <div class="sidebar">
+    <h2>Prescient AI</h2>
+    <div class="sub">Chief of Staff</div>
+    <div class="nav-item active" onclick="showTab('today')"><div class="dot" style="background:#10b981;"></div> Today <span class="count" id="navTodayCount"></span></div>
+    <div class="nav-item" onclick="showTab('pipeline')"><div class="dot" style="background:#f59e0b;"></div> Pipeline</div>
+    <div class="nav-item" onclick="showTab('leads')"><div class="dot" style="background:#a855f7;"></div> All Leads</div>
+    <div class="spacer"></div>
+    <div class="user"><strong>Mike True</strong>Co-founder &amp; CEO</div>
+  </div>
+  <div class="center" id="main"><div style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="text-align:center;"><div style="font-size:24px;margin-bottom:8px;">⚡</div><div style="font-size:14px;color:#64748b;">Loading dashboard...</div></div></div></div>
+  <div class="chat-panel">
+    <div class="chat-header"><div class="pulse"></div><h3>Agent</h3><span class="badge">Ready</span></div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div id="contextArea"></div>
+    <div class="chat-input-area">
+      <textarea class="chat-input" id="chatInput" placeholder="Type a command..." rows="1"></textarea>
+      <button class="chat-send" onclick="sendChat()">&#8593;</button>
     </div>
   </div>
+</div>
+<div class="toast" id="toast"></div>
 
-  <script src="/app.js"></script>
+<script>
+// ═══════════════════════════════════════
+// DATA — Live from HubSpot + Gmail + Granola
+// Last refreshed: March 10, 2026 at 12:00 AM ET
+// ═══════════════════════════════════════
+
+const OWNERS = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", "1003618676": "Jason", "84289936": "Michael O", "82544484": "Jason N" };
+const OWNER_CLASS = { "Mike": "owner-mike", "Brian": "owner-brian", "Will": "owner-will" };
+const TODAY = new Date("2026-03-10");
+
+const STAGE_MAP = {
+  "93124525": "Disco Booked", "998751160": "Disco Complete", "appointmentscheduled": "Demo Scheduled",
+  "123162712": "Demo Completed", "decisionmakerboughtin": "Negotiating", "227588384": "Committed",
+  "closedwon": "Closed Won", "closedlost": "Closed Lost", "60237411": "Nurture", "53401375": "Booking"
+};
+const STAGE_COLORS = {
+  "Committed": "background:rgba(16,185,129,0.2);color:#10b981;",
+  "Negotiating": "background:rgba(96,165,250,0.2);color:#60a5fa;",
+  "Demo Completed": "background:rgba(168,85,247,0.2);color:#a855f7;",
+  "Demo Scheduled": "background:rgba(245,158,11,0.2);color:#f59e0b;",
+  "Disco Complete": "background:rgba(245,158,11,0.2);color:#f59e0b;",
+  "Disco Booked": "background:rgba(100,116,139,0.2);color:#94a3b8;",
+  "Nurture": "background:rgba(100,116,139,0.15);color:#64748b;",
+  "Booking": "background:rgba(100,116,139,0.15);color:#64748b;"
+};
+
+let PIPELINE = [];
+
+// ═══ ALL ACTION ITEMS ═══
+let ACTIONS = [];
+
+let MEETINGS = [];
+
+const CAT_CONFIG = {
+  inbound: { icon: "&#9679;", label: "Inbound — Act Fast", color: "#10b981" },
+  sales: { icon: "&#9679;", label: "Sales Follow-ups", color: "#f59e0b" },
+  partnerships: { icon: "&#9679;", label: "Partnerships", color: "#a855f7" },
+  strategic: { icon: "&#9679;", label: "Investor / Strategic", color: "#60a5fa" },
+  internal: { icon: "&#9679;", label: "Internal Ops", color: "#ef4444" },
+};
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+async function loadData() {
+  try {
+    const res = await fetch("/api/data");
+    if (!res.ok) throw new Error("API error: " + res.status);
+    const data = await res.json();
+    if (data.actions) ACTIONS = data.actions;
+    if (data.meetings) MEETINGS = data.meetings;
+    if (data.pipeline) PIPELINE = data.pipeline;
+  } catch (err) {
+    console.error("Failed to load data:", err);
+    // Show error in chat if available
+    const chat = document.getElementById("chatMessages");
+    if (chat) {
+      chat.innerHTML = '<div class="chat-msg agent"><strong>Error loading data.</strong> Check API connection.<br><span style="color:#ef4444;font-size:11px;">' + err.message + '</span></div>';
+    }
+  }
+}
+
+const chatHistory = [];
+let selectedId = null;
+let leadsSearch = "";
+let leadsFilter = "all"; // all | open | done | inbound | sales
+let leadsSearchCursor = 0;
+
+function getOpen() { return ACTIONS.filter(a => a.status === "open"); }
+function getDone() { return ACTIONS.filter(a => a.status === "done"); }
+function getArchived() { return ACTIONS.filter(a => a.status === "archived"); }
+function getSelected() { return ACTIONS.find(a => a.id === selectedId); }
+
+function daysStale(lastActivity) {
+  if (!lastActivity) return 0;
+  return Math.floor((TODAY - new Date(lastActivity)) / 86400000);
+}
+
+function staleBadge(days) {
+  if (days >= 5) return `<span class="badge-overdue">${days}d overdue</span>`;
+  if (days >= 3) return `<span class="badge-stale">${days}d ago</span>`;
+  return `<span class="badge-fresh">${days}d ago</span>`;
+}
+
+function fmtMoney(n) {
+  if (!n) return "";
+  return "$" + (n >= 1000000 ? (n/1000000).toFixed(1) + "M" : (n/1000).toFixed(0) + "K");
+}
+
+// ═══════════════════════════════════════
+// SELECT / ADVANCE / ARCHIVE
+// ═══════════════════════════════════════
+function selectItem(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a || a.status !== "open") return;
+  selectedId = id;
+  const days = daysStale(a.lastActivity);
+  const urgency = days >= 5 ? " This is <strong>overdue</strong>." : days >= 3 ? " Getting stale." : "";
+  if (a.emailSummary) {
+    addChat("agent", `<strong>${a.company}</strong>${urgency}<br><br><div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${a.emailSummary}</div>${a.emailUrl ? `<a href="${a.emailUrl}" target="_blank" style="font-size:11px;">Open in Superhuman →</a>` : ""}`);
+  } else {
+    addChat("agent", `<strong>${a.company}</strong>${urgency}<br><span style="color:#94a3b8;">${a.task}</span>`);
+  }
+  renderContextBar();
+  renderCurrentTab();
+}
+
+function advanceToNext() {
+  const open = getOpen();
+  if (open.length === 0) {
+    selectedId = null;
+    addChat("agent", "All follow-ups handled. Nice work.");
+    renderContextBar(); renderCurrentTab(); return;
+  }
+  const allOpen = ACTIONS.filter(a => a.status === "open");
+  const curIdx = allOpen.findIndex(a => a.id === selectedId);
+  const next = allOpen[curIdx + 1] || allOpen[0];
+  selectItem(next.id);
+}
+
+function markDone(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  a.status = "done"; a.color = "tg";
+  addChat("agent", `✓ ${a.company} done.`);
+  setTimeout(() => advanceToNext(), 300);
+}
+
+function archiveItem(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  a.status = "archived";
+  addChat("agent", `✕ ${a.company} archived.`);
+  setTimeout(() => advanceToNext(), 300);
+}
+
+// ═══════════════════════════════════════
+// CONTEXT BAR
+// ═══════════════════════════════════════
+function renderContextBar() {
+  const area = document.getElementById("contextArea");
+  const sel = getSelected();
+  if (sel && sel.status === "open") {
+    const dv = sel.dealValue ? ` <span class="deal-val">${fmtMoney(sel.dealValue)}</span>` : "";
+    let primaryLabel = "Draft + HubSpot";
+    let primaryAction = "both";
+    if (sel.draftPrompt && sel.crmPrompt) { primaryLabel = "Draft + HubSpot"; primaryAction = "both"; }
+    else if (sel.draftPrompt) { primaryLabel = "Draft Reply"; primaryAction = "draft"; }
+    else if (sel.crmPrompt) { primaryLabel = "Update HubSpot"; primaryAction = "hubspot"; }
+    else { primaryLabel = "Prep Me"; primaryAction = "prep"; }
+
+    area.innerHTML = `<div class="context-bar">
+      <div class="ctx-top">
+        <div class="ctx-company">${sel.company}${dv}</div>
+        <div class="ctx-status-btns">
+          <button class="ctx-done-btn" onclick="markDone(${sel.id})">✓ Done</button>
+          <button class="ctx-skip-btn" onclick="advanceToNext()">Skip →</button>
+          <button class="ctx-archive-btn" onclick="archiveItem(${sel.id})">✕</button>
+        </div>
+      </div>
+      <div class="ctx-actions">
+        <button class="ctx-btn ctx-primary" onclick="${primaryAction === 'prep' ? `buildPrep(ACTIONS.find(a=>a.id===${sel.id}))` : `runAction('${primaryAction}')`}">${primaryLabel}</button>
+        <button class="ctx-btn ctx-secondary" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))">Prep</button>
+        <button class="ctx-btn ctx-slack" onclick="showSlackMenu(${sel.id})">Slack</button>
+      </div>
+    </div>`;
+  } else {
+    area.innerHTML = `<div style="padding:8px 16px;border-top:1px solid #1e293b;display:flex;flex-wrap:wrap;gap:5px;">
+      <div class="quick-chip" onclick="startWork()">Start first item</div>
+      <div class="quick-chip" onclick="quickCmd('Pull fresh data from Gmail, HubSpot, and Granola and update my CoS dashboard.')">Refresh data</div>
+    </div>`;
+  }
+}
+
+function startWork() {
+  const open = getOpen();
+  if (open.length === 0) { addChat("agent", "No open items!"); return; }
+  selectItem(open[0].id);
+}
+
+// ═══════════════════════════════════════
+// ACTIONS (clipboard-based)
+// ═══════════════════════════════════════
+function runAction(type, id) {
+  // Accept optional id so dropdown items skip selectItem (avoids DOM re-render race)
+  const sel = id ? ACTIONS.find(a => a.id === id) : getSelected();
+  if (!sel) { addChat("agent", "Select an item first."); return; }
+  if (id) selectedId = id; // sync state without re-rendering
+  let cmd = "", label = "";
+  if (type === "both") {
+    cmd = (sel.draftPrompt || "") + "\n\nAlso: " + (sel.crmPrompt || "");
+    label = `Draft + HubSpot — ${sel.company}`;
+  } else if (type === "draft") {
+    cmd = sel.draftPrompt; label = `Draft Reply — ${sel.company}`;
+  } else if (type === "hubspot") {
+    cmd = sel.crmPrompt; label = `Update HubSpot — ${sel.company}`;
+  } else if (type === "order") {
+    cmd = `Generate an order form for ${sel.company} using the Luxome template. Pull deal details from HubSpot and our meeting notes.`;
+    label = `Order Form — ${sel.company}`;
+  }
+  if (cmd) {
+    copyToClipboard(cmd);
+    addChat("agent", `<strong>${label}</strong> — copied. Paste in Cowork.`);
+    // Refresh UI after action executes (not before)
+    renderContextBar();
+    renderCurrentTab();
+  }
+}
+
+// ═══════════════════════════════════════
+// SLACK
+// ═══════════════════════════════════════
+const SLACK_TARGETS = [
+  { label: "#sales", type: "channel" },
+  { label: "#partnerships", type: "channel" },
+  { label: "#general", type: "channel" },
+  { label: "#deals", type: "channel" },
+  { label: "#leadership", type: "channel" },
+  { label: "#product", type: "channel" },
+  { label: "#engineering", type: "channel" },
+  { label: "#data-science", type: "channel" },
+  { label: "#marketing", type: "channel" },
+  { label: "#client-success", type: "channel" },
+  { label: "#revenue-ops", type: "channel" },
+  { label: "#announcements", type: "channel" },
+  { label: "Brian", type: "person" },
+  { label: "Will", type: "person" },
+  { label: "Jason", type: "person" },
+  { label: "Elliot", type: "person" },
+  { label: "Ali", type: "person" },
+  { label: "Alicia", type: "person" },
+  { label: "Nathan", type: "person" },
+];
+
+function showSlackMenu(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  if (id) selectedId = id;
+  const defaultMsg = generateSlackMsg(a);
+  const channelOpts = SLACK_TARGETS.filter(t => t.type === "channel").map(t =>
+    `<button class="slack-opt" onclick="pickSlackTarget('${t.label}')">${t.label}</button>`).join("");
+  const personOpts = SLACK_TARGETS.filter(t => t.type === "person").map(t =>
+    `<button class="slack-opt" onclick="pickSlackTarget('${t.label}')">@${t.label}</button>`).join("");
+  const area = document.getElementById("contextArea");
+  area.innerHTML = `<div class="context-bar" style="padding:14px 16px;">
+    <div style="font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:8px;">Slack — ${a.company}</div>
+    <div style="margin-bottom:8px;">
+      <div style="font-size:10px;color:#475569;margin-bottom:3px;">To</div>
+      <div id="slackToDisplay" style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box;" onclick="toggleSlackPicker()">
+        <span id="slackToLabel">#sales</span><span style="color:#475569;">▾</span>
+      </div>
+      <input type="hidden" id="slackTo" value="#sales">
+      <div id="slackPicker" style="display:none;background:#0f172a;border:1px solid #334155;border-radius:8px;margin-top:4px;max-height:200px;overflow-y:auto;padding:4px 0;">
+        <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">Channels</div>
+        ${channelOpts}
+        <div style="border-top:1px solid #1e293b;margin:4px 0;"></div>
+        <div style="padding:4px 10px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;">People</div>
+        ${personOpts}
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:10px;color:#475569;margin-bottom:3px;">Message</div>
+      <textarea id="slackMsg" rows="4"
+        style="width:100%;background:#0a0e1a;border:1px solid #334155;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:12px;font-family:inherit;outline:none;resize:vertical;line-height:1.5;box-sizing:border-box;"
+      >${defaultMsg}</textarea>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="ctx-btn" style="background:#4A154B;color:#E8D5E8;flex:1;padding:10px;" onclick="sendSlack(${a.id})">Send to Slack</button>
+      <button class="ctx-btn ctx-secondary" style="flex:0;" onclick="renderContextBar()">Cancel</button>
+    </div>
+  </div>`;
+  setTimeout(() => {
+    const msgInput = document.getElementById("slackMsg");
+    if (msgInput) msgInput.addEventListener("keydown", e => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); sendSlack(id); }});
+  }, 50);
+}
+
+function toggleSlackPicker() {
+  const picker = document.getElementById("slackPicker");
+  if (picker) picker.style.display = picker.style.display === "none" ? "block" : "none";
+}
+
+function pickSlackTarget(val) {
+  document.getElementById("slackTo").value = val;
+  document.getElementById("slackToLabel").textContent = val;
+  document.getElementById("slackPicker").style.display = "none";
+}
+
+function generateSlackMsg(a) {
+  const lines = [`*${a.company}* — update`, a.task];
+  if (a.meta) lines.push(`_${a.meta.replace(/<[^>]*>/g,"")}_`);
+  const days = daysStale(a.lastActivity);
+  if (days >= 5) lines.push(`⚠️ ${days}d since last activity`);
+  return lines.join("\n");
+}
+
+function sendSlack(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  const to = document.getElementById("slackTo").value.trim();
+  const msg = document.getElementById("slackMsg").value.trim();
+  if (!to || !msg) return;
+  const isChannel = to.startsWith("#");
+  const cmd = isChannel
+    ? `Send this Slack message to the ${to} channel:\n\n${msg}`
+    : `Send this Slack DM to ${to}:\n\n${msg}`;
+  copyToClipboard(cmd);
+  addChat("agent", `<strong>Slack → ${to}</strong> — copied. Paste in Cowork.`);
+  renderContextBar();
+}
+
+// ═══════════════════════════════════════
+// PREP ENGINE
+// ═══════════════════════════════════════
+function buildPrep(item) {
+  if (!item) { addChat("agent", "Select an item first."); return; }
+  const co = item.company;
+  let prep = `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:8px;padding:14px;font-size:12px;line-height:1.7;">`;
+  prep += `<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:10px;">📋 ${co} — Prep</div>`;
+
+  if (item.emailSummary) {
+    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#10b981;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Email Thread</div>${item.emailSummary}</div>`;
+  }
+
+  const deals = PIPELINE.filter(d => d.name.toLowerCase().includes(co.toLowerCase()));
+  if (deals.length > 0) {
+    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#f59e0b;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">HubSpot Pipeline</div>`;
+    deals.forEach(d => {
+      prep += `<strong>${d.name}</strong> — ${fmtMoney(d.amount)} · ${d.stage} · ${d.owner||"Unassigned"}`;
+      if (d.close) prep += ` · Close: ${new Date(d.close).toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+      prep += `<br>`;
+    });
+    prep += `</div>`;
+  }
+
+  const meetings = MEETINGS.filter(m => m.title.toLowerCase().includes(co.toLowerCase()));
+  if (meetings.length > 0) {
+    prep += `<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#60a5fa;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Meeting History</div>`;
+    meetings.forEach(m => {
+      prep += `<strong>${m.date}</strong> — ${m.title} (${m.people})<br>`;
+      if (m.summary) prep += `<span style="color:#94a3b8;">${m.summary}</span><br>`;
+    });
+    prep += `</div>`;
+  }
+
+  // Suggested approach
+  prep += `<div style="margin-bottom:8px;"><div style="font-size:11px;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:4px;">Suggested Approach</div>`;
+  if (item.cat === "inbound" && item.task.match(/intro|warm/i)) {
+    prep += `Build rapport — reference the mutual connection. Ask about their current analytics stack. Position Prescient as the AI-powered MMM that former clients love. Push for demo.`;
+  } else if (item.cat === "inbound" && item.task.match(/M&A|invest/i)) {
+    prep += `Listen mode — understand their thesis. Don't reveal financials. Gauge if exploratory or real. Loop Brian in before next steps.`;
+  } else if (deals.length > 0) {
+    const deal = deals[0];
+    if (deal.stage === "Negotiating") prep += `In negotiation. Know your floor. Have case studies ready. Push for decision timeline.`;
+    else if (deal.stage.includes("Demo")) prep += `Post-demo. Focus on their use case. Address objections. Push toward proposal.`;
+    else if (deal.stage.includes("Disco")) prep += `Early stage. Ask about current MMM/attribution. Understand media mix. Find pain point.`;
+    else prep += `Review deal status and tailor approach.`;
+  } else {
+    prep += `Newer relationship. Focus on understanding needs and finding the right angle.`;
+  }
+  prep += `</div></div>`;
+
+  prep += `<div style="display:flex;gap:6px;margin-top:8px;">`;
+  prep += `<div class="quick-chip" onclick="deepPrep(${item.id})" style="border-color:#10b981;color:#10b981;">Go deeper — Clay + Web + Email</div>`;
+  if (item.emailUrl) prep += `<div class="quick-chip" onclick="window.open('${item.emailUrl}','_blank')">Open in Superhuman</div>`;
+  if (item.granola) prep += `<div class="quick-chip" onclick="window.open('${item.granola}','_blank')">Granola Notes</div>`;
+  prep += `</div>`;
+
+  addChat("agent", prep);
+}
+
+function deepPrep(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  const cmd = `Deep prep for my meeting with ${a.company}. Do ALL of the following:\n\n1. CLAY: Search Clay for ${a.company} — pull company size, funding, tech stack, recent news, key decision makers.\n2. EMAIL: Search my Gmail for all threads with ${a.company}. Summarize the full history.\n3. HUBSPOT: Pull the full deal history, activity timeline, and notes for ${a.company}.\n4. WEB: Research ${a.company} — what do they do, how big, recent news, competitors.\n5. GRANOLA: Check Granola for any meeting notes related to ${a.company}.\n\nCompile into a brief I can scan in 60 seconds.`;
+  copyToClipboard(cmd);
+  addChat("agent", `<strong>Deep prep — ${a.company}</strong> — copied. Paste in Cowork.`);
+}
+
+function quickCmd(cmd) {
+  copyToClipboard(cmd);
+  addChat("agent", `Copied. Paste in Cowork to run.`);
+}
+
+// ═══════════════════════════════════════
+// CHAT
+// ═══════════════════════════════════════
+function addChat(role, text) {
+  const ts = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+  chatHistory.push({ role, text, ts });
+  const c = document.getElementById("chatMessages");
+  c.innerHTML = chatHistory.map(m => `<div class="chat-msg ${m.role}">${m.text}<div class="ts">${m.ts}</div></div>`).join("");
+  c.scrollTop = c.scrollHeight;
+}
+
+function sendChat() {
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+  addChat("user", text); input.value = ""; input.style.height = "40px";
+  if (handleLocalCommand(text)) return;
+  copyToClipboard(text);
+  setTimeout(() => addChat("agent", `Copied. Paste in Cowork.`), 300);
+}
+
+function handleLocalCommand(text) {
+  const t = text.toLowerCase();
+  const sel = getSelected();
+
+  // Confirmed / on calendar
+  if (t.match(/\b(on my calendar|scheduled|confirmed|already booked|meeting.?s? (set|booked|confirmed)|it.?s on|booked it)\b/)) {
+    if (sel) { addChat("agent", `✓ ${sel.company} — on calendar.`); markDone(sel.id); return true; }
+  }
+  // Already replied
+  if (t.match(/\b(already (replied|responded|emailed|sent)|i (replied|responded|sent)|wrote them|emailed them|sent (it|that|the email))\b/)) {
+    if (sel) { addChat("agent", `✓ ${sel.company} — already handled.`); markDone(sel.id); return true; }
+  }
+  // Not interested
+  if (t.match(/\b(not interested|pass on|not a fit|not for us|too early|not now|waste of time|spam|junk)\b/)) {
+    if (sel) { addChat("agent", `✕ ${sel.company} — not a fit.`); archiveItem(sel.id); return true; }
+  }
+  // Research
+  if (t.match(/\b(who (is|are)|look.* up|research|what do we know|tell me (more|about)|background|check (on|this|them))\b/)) {
+    if (sel) {
+      const cmd = `Research ${sel.company} for me. What do they do? How big are they? Key people? Website, LinkedIn, news. Give me a 30-second brief.`;
+      copyToClipboard(cmd);
+      addChat("agent", `<strong>Research ${sel.company}</strong> — copied. Paste in Cowork.`);
+      return true;
+    }
+  }
+  // Prep
+  if (t.match(/\b(prep|prepare|get ready|talking points|agenda|brief me|meeting prep)\b/)) {
+    if (sel) { buildPrep(sel); return true; }
+  }
+  // Delegate
+  if (t.match(/\b(forward|send to brian|delegate|hand off|brian.?s|assign|pass to|have brian|tell brian)\b/)) {
+    if (sel) {
+      const who = t.match(/brian/) ? "Brian" : t.match(/will/) ? "Will" : t.match(/jason/) ? "Jason" : "the team";
+      const cmd = `Forward the ${sel.company} follow-up to ${who}. Context: ${sel.task}`;
+      copyToClipboard(cmd);
+      addChat("agent", `<strong>Delegate → ${who}</strong> — ${sel.company}. Copied.`);
+      return true;
+    }
+  }
+  // Bump / nudge
+  if (t.match(/\b(bump|nudge|ping|poke|follow up again|circle back|touch base|gentle reminder)\b/)) {
+    if (sel && sel.draftPrompt) {
+      const cmd = sel.draftPrompt.replace(/Draft a follow-up/, "Draft a gentle bump").replace(/Draft a reply/, "Draft a gentle follow-up") + " Keep it 2-3 sentences max. Light and friendly.";
+      copyToClipboard(cmd);
+      addChat("agent", `<strong>Bump — ${sel.company}</strong> — copied. Paste in Cowork.`);
+      return true;
+    }
+  }
+  // Create new opportunity / deal
+  if (t.match(/\b(create (new |a )?(opportunity|deal|opp)|new (opportunity|deal)|add (to |in )?hubspot|create in hubspot|log (new |a )?(deal|opportunity)|new hubspot)\b/)) {
+    if (sel) {
+      const cmd = `Create a new deal/opportunity in HubSpot for ${sel.company}. ${sel.crmPrompt || `Company: ${sel.company}. Task: ${sel.task}. Pull contact details from email and meeting notes.`}`;
+      copyToClipboard(cmd);
+      addChat("agent", `<strong>Create HubSpot deal — ${sel.company}</strong> — copied. Paste in Cowork.`);
+      return true;
+    } else {
+      copyToClipboard(`Create a new deal/opportunity in HubSpot. Ask me for the company name and details, or pull from the most recent email thread.`);
+      addChat("agent", `<strong>Create HubSpot deal</strong> — copied. Paste in Cowork.`);
+      return true;
+    }
+  }
+  // Slack
+  if (t.match(/\b(slack|share to|post to|send to #|dm |message )\b/)) {
+    if (sel) {
+      showSlackMenu(sel.id);
+      setTimeout(() => {
+        const toInput = document.getElementById("slackTo");
+        if (!toInput) return;
+        const ch = t.match(/#(\w+)/);
+        const per = t.match(/\b(brian|will|jason|elliot|ali)\b/i);
+        if (ch) toInput.value = "#" + ch[1];
+        else if (per) toInput.value = per[1].charAt(0).toUpperCase() + per[1].slice(1).toLowerCase();
+      }, 100);
+      return true;
+    }
+  }
+  // Archive
+  if (t.match(/\b(archive|dismiss|remove|kill it|nah|drop it|forget it|trash)\b/)) {
+    if (sel) { archiveItem(sel.id); return true; }
+  }
+  // Skip
+  if (t.match(/\b(skip|next|move on|pass|later|come back|tomorrow|no action)\b/)) {
+    if (sel) { addChat("agent", `Skipping <strong>${sel.company}</strong>.`); setTimeout(() => advanceToNext(), 200); return true; }
+  }
+  // Done
+  if (t.match(/\b(done|finished|complete|handled|checked off)\b/) && sel) { markDone(sel.id); return true; }
+  // Draft
+  if (t.match(/\b(draft|email|write|send|reply|compose|follow.?up)\b/)) {
+    if (sel && sel.draftPrompt) { runAction("draft"); return true; }
+    const match = findCompanyInText(t);
+    if (match) { selectItem(match.id); setTimeout(() => { if(match.draftPrompt) runAction("draft"); }, 100); return true; }
+  }
+  // HubSpot
+  if (t.match(/\b(hubspot|crm|update crm|log|update hub)\b/)) {
+    if (sel && sel.crmPrompt) { runAction("hubspot"); return true; }
+    const match = findCompanyInText(t);
+    if (match) { selectItem(match.id); setTimeout(() => { if(match.crmPrompt) runAction("hubspot"); }, 100); return true; }
+  }
+  // Order form
+  if (t.match(/\b(order form|contract|proposal)\b/)) {
+    if (sel) { runAction("order"); return true; }
+  }
+  // Start
+  if (t.match(/^(start|begin|go|let.?s go|ready|work|run through)/)) { startWork(); return true; }
+  // Company name match
+  const match = findCompanyInText(t);
+  if (match && match.status === "open") { selectItem(match.id); return true; }
+
+  return false;
+}
+
+function findCompanyInText(text) {
+  const t = text.toLowerCase();
+  return ACTIONS.find(a => a.status === "open" && t.includes(a.company.toLowerCase()));
+}
+
+function copyToClipboard(text) {
+  // file:// protocol doesn't support navigator.clipboard — always use fallback first
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) { showToast("Copied — paste in Cowork"); return; }
+  } catch(e) {}
+  // Fallback to modern API if available (HTTPS only)
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast("Copied — paste in Cowork")).catch(() => showToast("Copy failed — select text manually"));
+  } else {
+    showToast("Copy failed — select text manually");
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2000);
+}
+
+// ═══════════════════════════════════════
+// RENDER — 3 VIEWS: Today, Pipeline, Leads
+// ═══════════════════════════════════════
+let currentTab = "today";
+
+function renderCurrentTab() { showTab(currentTab); }
+
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".nav-item").forEach((n,i) => n.classList.toggle("active", (tab==="today"&&i===0)||(tab==="pipeline"&&i===1)||(tab==="leads"&&i===2)));
+
+  const open = getOpen();
+  const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
+  document.getElementById("navTodayCount").textContent = open.length;
+  const main = document.getElementById("main");
+
+  if (tab === "today") {
+    renderTodayView(main);
+  } else if (tab === "pipeline") {
+    renderPipelineView(main);
+  } else if (tab === "leads") {
+    renderLeadsView(main);
+  }
+}
+
+// ───────────────────────────────────────
+// VIEW 1: TODAY — the daily action queue
+// ───────────────────────────────────────
+function renderTodayView(main) {
+  const open = getOpen();
+  const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
+  const upcomingMtgs = MEETINGS.filter(m => m.upcoming);
+  const inbound = open.filter(a => a.cat === "inbound");
+  const replyNow = open.filter(a => a.cat !== "inbound" && a.cat !== "internal");
+  const crmGaps = getCrmGaps();
+
+  let html = `<h1>Today</h1>`;
+  html += `<div class="subtitle">${open.length} items need your attention`;
+  if (overdue.length > 0) html += ` · <span style="color:#ef4444;">${overdue.length} overdue</span>`;
+  html += ` · ${new Date().toLocaleDateString("en-US", {weekday:"long", month:"short", day:"numeric"})}</div>`;
+
+  // ── UP NEXT: Meetings ──
+  if (upcomingMtgs.length > 0 || inbound.length > 0) {
+    html += `<div class="section">`;
+    if (upcomingMtgs.length > 0) {
+      const todayMtgs = upcomingMtgs.filter(m => m.date && m.date.startsWith("Tue 3/10"));
+      const laterMtgs = upcomingMtgs.filter(m => !m.date || !m.date.startsWith("Tue 3/10"));
+      const externalToday = todayMtgs.filter(m => m.external);
+      const internalToday = todayMtgs.filter(m => !m.external);
+
+      // External meetings TODAY — top priority
+      if (externalToday.length > 0) {
+        html += `<div class="section-header"><span class="section-icon">🔴</span><span class="section-title">External Calls — Today</span><span class="section-count">${externalToday.length}</span></div>`;
+        externalToday.forEach(m => {
+          const isSel = m.actionId === selectedId;
+          const mtgAction = ACTIONS.find(a => a.id === m.actionId);
+          html += `<div class="mtg-card${isSel?' selected':''}" style="border-color:#ef4444; border-left:3px solid #ef4444;" ${m.actionId != null ? `onclick="selectItem(${m.actionId})"` : ''}>
+            <div class="mtg-top">
+              <span class="mtg-date">${m.date}</span>
+              <span class="mtg-title">${m.title}</span>
+              <span class="mtg-people">${m.people}</span>
+            </div>
+            <div class="mtg-summary">${m.summary}</div>
+            ${m.action ? `<div class="mtg-action">⚡ ${m.action}</div>` : ""}
+            <div class="mtg-btns" style="display:flex;align-items:center;gap:6px;">
+              ${m.actionId != null ? `
+                <button class="action-primary" onclick="event.stopPropagation();buildPrep(ACTIONS.find(a=>a.id===${m.actionId}))">🧠 Prep Me</button>
+                <div class="action-group" style="position:relative;">
+                  <button class="action-chevron" onclick="event.stopPropagation();toggleDropdown(this)" style="border-radius:6px;">▾</button>
+                  <div class="action-dropdown">
+                    ${mtgAction && mtgAction.draftPrompt ? `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${m.actionId})"><span class="dd-icon">✏️</span> Draft Reply</button>` : ''}
+                    ${mtgAction && mtgAction.crmPrompt ? `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('hubspot',${m.actionId})"><span class="dd-icon">⚡</span> Update CRM</button>` : ''}
+                    <button class="action-dropdown-item" onclick="event.stopPropagation();showSlackMenu(${m.actionId})"><span class="dd-icon">💬</span> Send to Slack</button>
+                    ${m.url ? `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${m.url}','_blank')"><span class="dd-icon">📝</span> Meeting Notes</button>` : ''}
+                    ${mtgAction && mtgAction.emailUrl ? `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${mtgAction.emailUrl}','_blank')"><span class="dd-icon">📧</span> Open in Superhuman</button>` : ''}
+                  </div>
+                </div>` : ''}
+              ${!m.actionId && m.url ? `<button class="btn-sm" onclick="event.stopPropagation();window.open('${m.url}','_blank')">Notes</button>` : ""}
+            </div>
+          </div>`;
+        });
+      }
+
+      // Internal meetings TODAY
+      if (internalToday.length > 0) {
+        html += `<div class="section-header" style="margin-top:16px;"><span class="section-icon">📅</span><span class="section-title">Internal — Today</span><span class="section-count">${internalToday.length}</span></div>`;
+        internalToday.forEach(m => {
+          html += `<div class="mtg-card" style="border-color:#1e293b; opacity:0.75;">
+            <div class="mtg-top">
+              <span class="mtg-date" style="background:rgba(100,116,139,0.15); color:#94a3b8;">${m.date}</span>
+              <span class="mtg-title" style="color:#94a3b8;">${m.title}</span>
+              <span class="mtg-people">${m.people}</span>
+            </div>
+            <div class="mtg-summary">${m.summary}</div>
+            ${m.action ? `<div class="mtg-action" style="color:#64748b;">📌 ${m.action}</div>` : ""}
+          </div>`;
+        });
+      }
+
+      // Later this week
+      if (laterMtgs.length > 0) {
+        html += `<div class="section-header" style="margin-top:16px;"><span class="section-icon">📅</span><span class="section-title">Up Next — Later This Week</span><span class="section-count">${laterMtgs.length}</span></div>`;
+        laterMtgs.forEach(m => {
+          const isSel = m.actionId === selectedId;
+          html += `<div class="mtg-card${isSel?' selected':''}" ${m.actionId != null ? `onclick="selectItem(${m.actionId})"` : ''}>
+            <div class="mtg-top">
+              <span class="mtg-date">${m.date}</span>
+              <span class="mtg-title">${m.title}</span>
+              <span class="mtg-people">${m.people}</span>
+            </div>
+            <div class="mtg-summary">${m.summary}</div>
+            ${m.action ? `<div class="mtg-action">⚡ ${m.action}</div>` : ""}
+            <div class="mtg-btns">
+              ${m.actionId != null ? `<button class="btn-action" onclick="event.stopPropagation();buildPrep(ACTIONS.find(a=>a.id===${m.actionId}))">Prep</button>` : ""}
+              ${m.url ? `<button class="btn-sm" onclick="event.stopPropagation();window.open('${m.url}','_blank')">Notes</button>` : ""}
+            </div>
+          </div>`;
+        });
+      }
+    }
+    html += `</div>`;
+  }
+
+  // ── INBOUND — ACT FAST ──
+  if (inbound.length > 0) {
+    html += `<div class="section">`;
+    html += `<div class="section-header"><span class="section-icon" style="color:#10b981;">🔥</span><span class="section-title" style="color:#10b981;">Inbound — Act Fast</span><span class="section-count">${inbound.length}</span></div>`;
+    inbound.forEach(a => { html += renderActionItem(a); });
+    html += `</div>`;
+  }
+
+  // ── REPLY NOW ──
+  if (replyNow.length > 0) {
+    const sorted = [...replyNow].sort((a,b) => daysStale(b.lastActivity) - daysStale(a.lastActivity));
+    html += `<div class="section">`;
+    html += `<div class="section-header"><span class="section-icon">✉️</span><span class="section-title">Reply Now</span><span class="section-count">${replyNow.length}</span></div>`;
+    sorted.forEach(a => { html += renderActionItem(a); });
+    html += `</div>`;
+  }
+
+  // ── CRM GAPS ──
+  if (crmGaps.length > 0) {
+    // Store gaps globally so onclick can reference by index (avoids quote escaping bugs)
+    window._crmGaps = crmGaps;
+    html += `<div class="section">`;
+    html += `<div class="section-header"><span class="section-icon">⚠️</span><span class="section-title">CRM Gaps</span><span class="section-count">${crmGaps.length}</span></div>`;
+    crmGaps.forEach((g, idx) => {
+      html += `<div class="item" onclick="window.open('https://app.hubspot.com/contacts/21506140/record/0-3/${g.id}','_blank')" style="cursor:pointer;">
+        <span class="company tag ta">${g.name}</span>
+        <div class="body">
+          <div class="task">${g.issue}</div>
+          <div class="meta">${g.stage} · ${g.owner||"Unassigned"} ${g.amount ? `· ${fmtMoney(g.amount)}` : ""}</div>
+        </div>
+        <div class="actions">
+          <button class="btn-action" onclick="event.stopPropagation();fixCrmGap(${idx})">Fix</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // ── INTERNAL ──
+  const internal = open.filter(a => a.cat === "internal");
+  if (internal.length > 0) {
+    html += `<div class="section">`;
+    html += `<div class="section-header"><span class="section-icon">🔧</span><span class="section-title">Internal Ops</span><span class="section-count">${internal.length}</span></div>`;
+    internal.forEach(a => { html += renderActionItem(a); });
+    html += `</div>`;
+  }
+
+  main.innerHTML = html;
+}
+
+function fixCrmGap(idx) {
+  const g = window._crmGaps && window._crmGaps[idx];
+  if (!g) return;
+  copyToClipboard(`Update HubSpot for ${g.name}. ${g.fixPrompt}`);
+  addChat("agent", `<strong>Update ${g.name}</strong> — copied. Paste in Cowork.`);
+}
+
+function getCrmGaps() {
+  const gaps = [];
+  PIPELINE.forEach(d => {
+    if (d.stage === "Nurture" || d.stage === "Booking") return;
+    const closeDate = d.close ? new Date(d.close) : null;
+    // Overdue close dates
+    if (closeDate && closeDate < TODAY && d.stage !== "Committed") {
+      gaps.push({ ...d, issue: `Close date was ${closeDate.toLocaleDateString("en-US",{month:"short",day:"numeric"})} — overdue. Update stage or close date.`, fixPrompt: `Deal close date is overdue (${d.close}). Either update the close date or change the stage. Current stage: ${d.stage}.` });
+    }
+    // No owner
+    else if (!d.owner) {
+      gaps.push({ ...d, issue: `No owner assigned. Someone needs to own this deal.`, fixPrompt: `This deal has no owner. Assign Mike, Brian, Will, or Jason as owner.` });
+    }
+  });
+  return gaps;
+}
+
+// ───────────────────────────────────────
+// VIEW 2: PIPELINE — clean table, no stat cards overhead
+// ───────────────────────────────────────
+function renderPipelineView(main) {
+  const stageOrder = ["Committed","Negotiating","Demo Completed","Demo Scheduled","Disco Complete","Disco Booked","Nurture","Booking"];
+  const sorted = [...PIPELINE].sort((a,b) => {
+    const sa = stageOrder.indexOf(a.stage), sb = stageOrder.indexOf(b.stage);
+    if (sa !== sb) return sa - sb;
+    return (b.amount||0) - (a.amount||0);
+  });
+
+  const active = PIPELINE.filter(d => d.stage !== "Nurture" && d.stage !== "Booking");
+  const total = active.reduce((s,d) => s + (d.amount || 0), 0);
+  const committed = PIPELINE.filter(d => d.stage === "Committed");
+  const committedVal = committed.reduce((s,d) => s + (d.amount || 0), 0);
+
+  let html = `<h1>Pipeline — Brand</h1>`;
+  html += `<div class="subtitle">${active.length} active deals · ${fmtMoney(total)} total · ${fmtMoney(committedVal)} committed (${committed.length})</div>`;
+
+  html += `<table class="pipe-table"><thead><tr><th>Deal</th><th>Value</th><th>Stage</th><th>Owner</th><th>Close</th></tr></thead><tbody>`;
+  sorted.forEach(d => {
+    const owner = d.owner || "—";
+    const ownerCls = OWNER_CLASS[owner] || "owner-other";
+    const sc = STAGE_COLORS[d.stage] || "background:#1e293b;color:#64748b;";
+    const isYours = d.owner === "Mike" ? "style='background:rgba(59,130,246,0.04);'" : "";
+    const closeStr = d.close ? new Date(d.close).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
+    const closeOverdue = d.close && new Date(d.close) < TODAY ? " style='color:#ef4444;'" : " style='color:#64748b;font-size:12px;'";
+    html += `<tr ${isYours}><td class="deal-name"><a href="https://app.hubspot.com/contacts/21506140/record/0-3/${d.id}" target="_blank">${d.name}</a></td><td class="deal-amount">${fmtMoney(d.amount)}</td><td><span class="stage-pill" style="${sc}">${d.stage}</span></td><td><span class="owner-tag ${ownerCls}">${owner}</span></td><td${closeOverdue}>${closeStr}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+
+  // Meetings with open follow-ups related to pipeline
+  const pipelineMeetings = MEETINGS.filter(m => !m.upcoming && m.status === "open");
+  if (pipelineMeetings.length > 0) {
+    html += `<div class="section" style="margin-top:24px;">`;
+    html += `<div class="section-header"><span class="section-icon">📋</span><span class="section-title">Meetings Needing Follow-up</span><span class="section-count">${pipelineMeetings.length}</span></div>`;
+    pipelineMeetings.forEach(m => {
+      html += `<div class="item" onclick="${m.actionId !== undefined ? `selectItem(${m.actionId});showTab('today')` : ''}" style="cursor:${m.actionId !== undefined ? 'pointer' : 'default'};">
+        <span class="company tag ta" style="width:60px;text-align:center;">${m.date}</span>
+        <div class="body">
+          <div class="task">${m.title}</div>
+          <div class="meta">${m.action} · ${m.people}</div>
+        </div>
+        <div class="actions">
+          ${m.url ? `<button class="btn-link" onclick="event.stopPropagation();window.open('${m.url}','_blank')">Notes</button>` : ""}
+          ${m.actionId !== undefined ? `<button class="btn-action" onclick="event.stopPropagation();selectItem(${m.actionId});showTab('today')">Work on this</button>` : ""}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  main.innerHTML = html;
+}
+
+// ───────────────────────────────────────
+// VIEW 3: ALL LEADS — flat searchable list
+// ───────────────────────────────────────
+function renderLeadsView(main) {
+  let filtered = [...ACTIONS];
+
+  // Apply filter
+  if (leadsFilter === "open") filtered = filtered.filter(a => a.status === "open");
+  else if (leadsFilter === "done") filtered = filtered.filter(a => a.status === "done");
+  else if (leadsFilter === "inbound") filtered = filtered.filter(a => a.cat === "inbound");
+  else if (leadsFilter === "sales") filtered = filtered.filter(a => a.cat === "sales" || a.cat === "partnerships" || a.cat === "strategic");
+
+  // Apply search
+  if (leadsSearch) {
+    const q = leadsSearch.toLowerCase();
+    filtered = filtered.filter(a => a.company.toLowerCase().includes(q) || a.task.toLowerCase().includes(q) || (a.meta && a.meta.toLowerCase().includes(q)));
+  }
+
+  // Sort: open first, then by staleness
+  filtered.sort((a,b) => {
+    if (a.status === "open" && b.status !== "open") return -1;
+    if (a.status !== "open" && b.status === "open") return 1;
+    return daysStale(b.lastActivity) - daysStale(a.lastActivity);
+  });
+
+  const openCount = ACTIONS.filter(a => a.status === "open").length;
+  const doneCount = ACTIONS.filter(a => a.status === "done").length;
+
+  let html = `<h1>All Leads</h1>`;
+  html += `<div class="subtitle">${openCount} open · ${doneCount} done · ${ACTIONS.length} total</div>`;
+
+  // Search + filters
+  html += `<div class="search-bar">
+    <input class="search-input" id="leadsSearchInput" type="text" placeholder="Search leads..." value="${leadsSearch}" oninput="leadsSearch=this.value;leadsSearchCursor=this.selectionStart;renderLeadsView(document.getElementById('main'))">
+    <button class="filter-btn ${leadsFilter==='all'?'active':''}" onclick="leadsFilter='all';renderLeadsView(document.getElementById('main'))">All</button>
+    <button class="filter-btn ${leadsFilter==='open'?'active':''}" onclick="leadsFilter='open';renderLeadsView(document.getElementById('main'))">Open</button>
+    <button class="filter-btn ${leadsFilter==='inbound'?'active':''}" onclick="leadsFilter='inbound';renderLeadsView(document.getElementById('main'))">Inbound</button>
+    <button class="filter-btn ${leadsFilter==='sales'?'active':''}" onclick="leadsFilter='sales';renderLeadsView(document.getElementById('main'))">Sales</button>
+    <button class="filter-btn ${leadsFilter==='done'?'active':''}" onclick="leadsFilter='done';renderLeadsView(document.getElementById('main'))">Done</button>
+  </div>`;
+
+  if (filtered.length === 0) {
+    html += `<div class="section-empty">No leads match your filter.</div>`;
+  }
+
+  filtered.forEach(a => {
+    const isDone = a.status === "done";
+    const isSel = a.id === selectedId;
+    const days = daysStale(a.lastActivity);
+    const badge = !isDone ? staleBadge(days) : "";
+    const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
+    const catCfg = CAT_CONFIG[a.cat];
+    const catBadge = catCfg ? `<span style="font-size:9px;font-weight:600;color:${catCfg.color};background:${catCfg.color}20;padding:1px 6px;border-radius:3px;">${a.cat}</span>` : "";
+    const aiRec = a.aiRec ? `<span class="ai-badge">AI: ${a.aiRec}</span>` : "";
+
+    html += `<div class="item ${isDone?'done-item':''} ${isSel?'selected':''}" onclick="${isDone?'':`selectItem(${a.id})`}">
+      <span class="company tag ${a.color}">${a.company}</span>
+      <div class="body">
+        <div class="task">${a.task}</div>
+        <div class="meta">${catBadge} ${a.meta||""} ${badge} ${dv}</div>
+        ${aiRec ? `<div style="margin-top:4px;">${aiRec}</div>` : ""}
+      </div>
+      <div class="actions">
+        ${!isDone && a.draftPrompt ? `<button class="btn-action" onclick="event.stopPropagation();selectItem(${a.id});runAction('draft')">Draft</button>` : ""}
+        ${a.emailUrl ? `<button class="btn-sm" onclick="event.stopPropagation();window.open('${a.emailUrl}','_blank')">Superhuman</button>` : ""}
+        ${a.granola ? `<button class="btn-sm" onclick="event.stopPropagation();window.open('${a.granola}','_blank')">Notes</button>` : ""}
+        ${a.hubspot ? `<button class="btn-sm" onclick="event.stopPropagation();window.open('${a.hubspot}','_blank')">CRM</button>` : ""}
+        ${isDone ? '<span class="tag tg">&#10003;</span>' : ""}
+      </div>
+    </div>`;
+  });
+
+  main.innerHTML = html;
+  // Restore search input focus after re-render
+  if (leadsSearch) {
+    const si = document.getElementById("leadsSearchInput");
+    if (si) { si.focus(); si.selectionStart = si.selectionEnd = leadsSearchCursor; }
+  }
+}
+
+function renderActionItem(a) {
+  const isDone = a.status === "done";
+  const isSel = a.id === selectedId;
+  const days = daysStale(a.lastActivity);
+  const badge = !isDone ? staleBadge(days) : "";
+  const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
+  const aiRec = a.aiRec ? `<span class="ai-badge">AI: ${a.aiRec}</span>` : "";
+
+  // Determine primary action button — pass id directly, no selectItem re-render
+  let primaryBtn = "";
+  let primaryClass = "";
+  if (!isDone) {
+    if (a.draftPrompt && a.crmPrompt) {
+      primaryBtn = `<button class="action-primary" onclick="event.stopPropagation();runAction('draft',${a.id})">✏️ Draft</button>`;
+      primaryClass = "";
+    } else if (a.draftPrompt) {
+      primaryBtn = `<button class="action-primary" onclick="event.stopPropagation();runAction('draft',${a.id})">✏️ Draft</button>`;
+      primaryClass = "";
+    } else if (a.crmPrompt) {
+      primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();runAction('hubspot',${a.id})">⚡ Log to CRM</button>`;
+      primaryClass = "green";
+    } else {
+      primaryBtn = `<button class="action-primary purple" onclick="event.stopPropagation();buildPrep(ACTIONS.find(x=>x.id===${a.id}))">🧠 Prep</button>`;
+      primaryClass = "purple";
+    }
+  }
+
+  // Dropdown menu items — pass id directly to avoid selectItem DOM re-render race
+  let dropdownItems = "";
+  if (!isDone) {
+    if (a.draftPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('draft',${a.id})"><span class="dd-icon">✏️</span> Draft Reply</button>`;
+    if (a.crmPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('hubspot',${a.id})"><span class="dd-icon">⚡</span> Update CRM</button>`;
+    if (a.draftPrompt && a.crmPrompt) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();runAction('both',${a.id})"><span class="dd-icon">🔄</span> Draft + CRM</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();buildPrep(ACTIONS.find(x=>x.id===${a.id}))"><span class="dd-icon">🧠</span> Prep Me</button>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();showSlackMenu(${a.id})"><span class="dd-icon">💬</span> Send to Slack</button>`;
+    if (a.emailUrl) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${a.emailUrl}','_blank')"><span class="dd-icon">📧</span> Open in Superhuman</button>`;
+    if (a.granola) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${a.granola}','_blank')"><span class="dd-icon">📝</span> Meeting Notes</button>`;
+    if (a.hubspot) dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();window.open('${a.hubspot}','_blank')"><span class="dd-icon">🔗</span> Open in HubSpot</button>`;
+    dropdownItems += `<div class="dd-sep"></div>`;
+    dropdownItems += `<button class="action-dropdown-item" onclick="event.stopPropagation();markDone(${a.id})"><span class="dd-icon">✓</span> Mark Done</button>`;
+    dropdownItems += `<button class="action-dropdown-item danger" onclick="event.stopPropagation();archiveItem(${a.id})"><span class="dd-icon">✕</span> Archive</button>`;
+  }
+
+  return `<div class="item ${isDone?'done-item':''} ${isSel?'selected':''}" onclick="${isDone?'':`selectItem(${a.id})`}">
+    <span class="company tag ${a.color}">${a.company}</span>
+    <div class="body">
+      <div class="task">${a.task}</div>
+      <div class="meta">${a.meta||""} ${badge} ${dv}</div>
+      ${aiRec ? `<div style="margin-top:4px;">${aiRec}</div>` : ""}
+    </div>
+    ${isDone ? '<div class="actions"><span class="tag tg">&#10003;</span></div>' : `
+    <div class="action-group" style="position:relative;">
+      ${primaryBtn}
+      <button class="action-chevron ${primaryClass}" onclick="event.stopPropagation();toggleDropdown(this)">▾</button>
+      <div class="action-dropdown" id="dd-${a.id}">
+        ${dropdownItems}
+      </div>
+    </div>`}
+  </div>`;
+}
+
+function toggleDropdown(btn) {
+  // Close all other dropdowns first
+  document.querySelectorAll('.action-dropdown.open').forEach(d => d.classList.remove('open'));
+  const dd = btn.nextElementSibling;
+  dd.classList.toggle('open');
+  // Remove old listener if exists
+  if (btn._closeListener) document.removeEventListener('click', btn._closeListener);
+  // Close on click outside
+  const close = (e) => { if (!dd.contains(e.target) && e.target !== btn) { dd.classList.remove('open'); document.removeEventListener('click', close); btn._closeListener = null; } };
+  btn._closeListener = close;
+  setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+document.addEventListener("DOMContentLoaded", async () => {
+  // Load data from API first
+  await loadData();
+  
+  const input = document.getElementById("chatInput");
+  input.addEventListener("input", () => { input.style.height = "40px"; input.style.height = Math.min(input.scrollHeight,120)+"px"; });
+  input.addEventListener("keydown", e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+
+  const open = getOpen();
+  const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
+  const inboundCount = open.filter(a => a.cat === "inbound").length;
+  const upcoming = MEETINGS.filter(m => m.upcoming);
+  let welcome = `<strong>${open.length} items today.</strong>`;
+  if (inboundCount > 0) welcome += ` <span style="color:#10b981;font-weight:700;">${inboundCount} inbound.</span>`;
+  if (overdue.length > 0) welcome += ` <span style="color:#ef4444;">${overdue.length} overdue.</span>`;
+  if (upcoming.length > 0) welcome += `<br>Next meeting: <strong>${upcoming[0].title}</strong> — ${upcoming[0].date}.`;
+  welcome += `<br><br>Click any item or type <strong>start</strong>.`;
+  addChat("agent", welcome);
+  renderContextBar();
+});
+
+showTab("today");
+</script>
 </body>
 </html>
