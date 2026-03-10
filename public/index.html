@@ -2440,14 +2440,8 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   addChat("user", text); input.value = ""; input.style.height = "40px";
-  // Track any company/deal mentioned in user text for "them"/"they" resolution
-  const tLower = text.toLowerCase();
-  const mentionedAction = ACTIONS.find(a => a.status === "open" && tLower.includes(a.company.toLowerCase()));
-  if (mentionedAction) _lastMentionedCompany = mentionedAction.company;
-  else {
-    const mentionedDeal = PIPELINE.find(d => tLower.includes(d.name.toLowerCase()));
-    if (mentionedDeal) _lastMentionedCompany = mentionedDeal.name;
-  }
+  // Track any company/deal mentioned in user text for pronoun resolution
+  trackMentionedCompany(text);
   if (handleLocalCommand(text)) return;
   // Fallback: send to AI for a response
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Thinking...</div>`);
@@ -3433,19 +3427,14 @@ function renderPricingView(main) {
               </label>
               <label style="font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:4px;cursor:pointer;">
                 <input type="checkbox" id="pChRetail" value="Retail" onchange="pricingChannelToggle()"> Retail
+                <input id="pRetailCount" class="search-input" style="width:50px;padding:3px 6px;font-size:11px;margin-left:4px;" type="number" value="0" min="0" placeholder="#" title="Number of retail channels" onchange="if(this.value>0&&!document.getElementById('pChRetail').checked){document.getElementById('pChRetail').checked=true;pricingChannelToggle();}">
               </label>
             </div>
           </div>
           <div id="pRetailFields" style="display:none;">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-              <div>
-                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;"># Retail Channels</label>
-                <input id="pRetailCount" class="search-input" style="width:100%;" type="number" value="1" min="1">
-              </div>
-              <div>
-                <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Retailer Names</label>
-                <input id="pRetailNames" class="search-input" style="width:100%;" placeholder="QVC, Ulta, Target">
-              </div>
+            <div>
+              <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Retailer Names (optional)</label>
+              <input id="pRetailNames" class="search-input" style="width:100%;" placeholder="QVC, Ulta, Target, etc.">
             </div>
           </div>
         </div>
@@ -3457,18 +3446,23 @@ function renderPricingView(main) {
       </div>
 
       <div class="section">
-        <div class="section-header"><span class="section-title">Discount &amp; Terms</span></div>
+        <div class="section-header"><span class="section-title">Pricing &amp; Terms</span></div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px;color:#22d3ee;display:block;margin-bottom:3px;font-weight:600;">Target Annual Price ($) — enter desired price to auto-calculate balanced discount</label>
+          <input id="pTargetPrice" class="search-input" style="width:100%;border-color:#164e63;" type="number" placeholder="e.g. 150000 — leave blank for list price">
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <div>
-            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Discount %</label>
+            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Discount % <span style="font-size:9px;color:#475569;">(or use Target Price above)</span></label>
             <input id="pDiscount" class="search-input" style="width:100%;" type="number" value="0" min="0" max="100">
           </div>
           <div>
             <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:3px;">Discount Type</label>
             <select id="pDiscountType" class="search-input" style="width:100%;">
               <option value="none">None</option>
-              <option value="base_fee">Model Fees</option>
-              <option value="variable_fee">Media Fee</option>
+              <option value="both" selected>Both (Balanced)</option>
+              <option value="base_fee">Model Fees Only</option>
+              <option value="variable_fee">Media Fee Only</option>
             </select>
           </div>
           <div>
@@ -3641,7 +3635,10 @@ function refreshChat() {
 function pricingChannelToggle() {
   const retail = document.getElementById('pChRetail');
   const retailFields = document.getElementById('pRetailFields');
+  const retailCount = document.getElementById('pRetailCount');
   if (retail && retailFields) retailFields.style.display = retail.checked ? 'block' : 'none';
+  if (retail?.checked && retailCount && (parseInt(retailCount.value) || 0) === 0) retailCount.value = 1;
+  if (!retail?.checked && retailCount) retailCount.value = 0;
 
   const channels = [];
   if (document.getElementById('pChDTC')?.checked) channels.push({ id: 'pGmvDTC', label: 'DTC GMV ($)' });
@@ -3678,18 +3675,24 @@ async function runPricingCalc() {
   if (document.getElementById('pChRetail')?.checked) channels.push('Retail');
   if (!channels.length) { showToast('Select at least one channel'); return; }
 
+  const retailCount = parseInt(document.getElementById('pRetailCount')?.value) || 0;
+  // Auto-check Retail if count > 0
+  if (retailCount > 0 && !channels.includes('Retail')) channels.push('Retail');
+
+  const targetAnnual = parseFloat(document.getElementById('pTargetPrice')?.value) || null;
+
   const input = {
     brandName: brand,
     ltmMediaSpend: spend,
     enabledChannels: channels,
-    numberOfRetailChannels: parseInt(document.getElementById('pRetailCount')?.value) || 1,
+    numberOfRetailChannels: retailCount || 1,
     retailerNames: document.getElementById('pRetailNames')?.value?.split(',').map(s => s.trim()).filter(Boolean) || null,
     dtcGmv: parseFloat(document.getElementById('pGmvDTC')?.value) || null,
     amazonGmv: parseFloat(document.getElementById('pGmvAmazon')?.value) || null,
     tiktokGmv: parseFloat(document.getElementById('pGmvTikTok')?.value) || null,
     retailGmv: parseFloat(document.getElementById('pGmvRetail')?.value) || null,
-    requestedDiscountPercent: parseFloat(document.getElementById('pDiscount')?.value) || null,
-    discountType: document.getElementById('pDiscountType')?.value || 'none',
+    requestedDiscountPercent: targetAnnual ? null : (parseFloat(document.getElementById('pDiscount')?.value) || null),
+    discountType: targetAnnual ? 'both' : (document.getElementById('pDiscountType')?.value || 'none'),
     paymentTerms: document.getElementById('pPayment')?.value || 'Semi-Annual Net 7',
     termMonths: parseInt(document.getElementById('pTerm')?.value) || 12,
     optOutMonths: parseInt(document.getElementById('pOptOut')?.value),
@@ -3698,6 +3701,7 @@ async function runPricingCalc() {
     additionalDiscountAmount: parseFloat(document.getElementById('pAddlDiscount')?.value) || null,
     excludedOrNonManagedSpend: parseFloat(document.getElementById('pExcluded')?.value) || null,
   };
+  if (targetAnnual) input.targetAnnual = targetAnnual;
 
   _lastPricingInput = input;
   const resultsDiv = document.getElementById('pricingResults');
@@ -3768,7 +3772,10 @@ function renderPricingResults(data, container) {
         <div style="font-size:10px;color:#64748b;">LTM SPEND</div>
       </div>
     </div>
-    ${p.discountPercent ? `<div style="font-size:11px;color:#f59e0b;margin-bottom:12px;">Discount: ${p.discountPercent}% (-${fmtMoney(p.discountAmount)}) | List: ${fmtMoney(p.listPriceAnnual)}/yr</div>` : ''}
+    ${data.reverseResult ? `<div style="background:rgba(34,211,238,0.08);border:1px solid rgba(34,211,238,0.2);border-radius:6px;padding:8px 10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#22d3ee;font-weight:600;">Balanced ${data.reverseResult.discountPercent.toFixed(2)}% discount applied to Model Fees + Media Fee</div>
+      <div style="font-size:10px;color:#64748b;margin-top:2px;">Target: ${fmtMoney2(data.reverseResult.achievedAnnual)} | List: ${fmtMoney(data.reverseResult.listPriceAnnual)}/yr | Savings: ${fmtMoney(data.reverseResult.listPriceAnnual - data.reverseResult.achievedAnnual)}/yr</div>
+    </div>` : p.discountPercent ? `<div style="font-size:11px;color:#f59e0b;margin-bottom:12px;">Discount: ${p.discountPercent}% (-${fmtMoney(p.discountAmount)}) | List: ${fmtMoney(p.listPriceAnnual)}/yr</div>` : ''}
     <div style="margin-bottom:16px;">
       <div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;">Model Fee Breakdown</div>
       <table style="width:100%;border-collapse:collapse;">

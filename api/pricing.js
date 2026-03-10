@@ -5,6 +5,7 @@ import {
   normalizeChannel,
   validatePricingInput,
   calculatePricing,
+  reverseFromTarget,
   checkApprovalRules,
   formatPricingSummary,
   PAYMENT_TERMS,
@@ -64,11 +65,19 @@ export default async function handler(req, res) {
   }
 
   try {
+    // If targetAnnual provided, reverse-calculate balanced discount first
+    let reverseResult = null;
+    if (body.targetAnnual && body.targetAnnual > 0) {
+      reverseResult = reverseFromTarget(input, body.targetAnnual);
+      input.requestedDiscountPercent = reverseResult.discountPercent;
+      input.discountType = reverseResult.discountType;
+    }
+
     const pricing = calculatePricing(input);
     const approval = checkApprovalRules(input, pricing);
     const summary = formatPricingSummary(input, pricing, approval);
 
-    return res.status(200).json({ success: true, pricing, approval, summary });
+    return res.status(200).json({ success: true, pricing, approval, summary, reverseResult });
   } catch (err) {
     console.error('Pricing calculation error:', err);
     return res.status(500).json({ error: 'Pricing calculation failed: ' + err.message });

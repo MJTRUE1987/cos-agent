@@ -48,6 +48,7 @@ export const DISCOUNT_TYPES = Object.freeze({
   NONE: 'none',
   BASE_FEE: 'base_fee',
   VARIABLE_FEE: 'variable_fee',
+  BOTH: 'both',
 });
 
 export const APPROVAL_STATUSES = Object.freeze({
@@ -294,8 +295,8 @@ export function calculatePricing(input) {
   const rateMultiplier = input.variableRateMultiplier || 1.0;
   const additionalDiscount = input.additionalDiscountAmount || 0;
 
-  const applyToBase = discountType === DISCOUNT_TYPES.BASE_FEE && discountPercent > 0;
-  const applyToVariable = discountType === DISCOUNT_TYPES.VARIABLE_FEE && discountPercent > 0;
+  const applyToBase = (discountType === DISCOUNT_TYPES.BASE_FEE || discountType === DISCOUNT_TYPES.BOTH) && discountPercent > 0;
+  const applyToVariable = (discountType === DISCOUNT_TYPES.VARIABLE_FEE || discountType === DISCOUNT_TYPES.BOTH) && discountPercent > 0;
 
   // Model fees (V3 GMV-tier based)
   const base = calculateBaseFees(input, discountPercent, applyToBase);
@@ -347,6 +348,59 @@ export function calculatePricing(input) {
     termMonths: input.termMonths || 12,
     optOutMonths: input.optOutMonths != null ? input.optOutMonths : 6,
     calculatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Reverse-calculate: given a target annual price, find the balanced discount %
+ * that applies equally to both model fees and media fees to hit the target.
+ * Uses binary search because rounding ($100 increments) makes it non-linear.
+ */
+export function reverseFromTarget(input, targetAnnual) {
+  // Get list price first
+  const listResult = calculatePricing({ ...input, requestedDiscountPercent: 0, discountType: DISCOUNT_TYPES.NONE, additionalDiscountAmount: 0 });
+  const listPrice = listResult.listPriceAnnual;
+
+  if (targetAnnual >= listPrice) {
+    return { discountPercent: 0, discountType: DISCOUNT_TYPES.NONE, achievedAnnual: listPrice, listPriceAnnual: listPrice };
+  }
+  if (targetAnnual <= 0) {
+    return { discountPercent: 100, discountType: DISCOUNT_TYPES.BOTH, achievedAnnual: 0, listPriceAnnual: listPrice };
+  }
+
+  // Binary search for the discount % that gets closest to target
+  let lo = 0, hi = 100, bestPct = 0, bestDiff = Infinity, bestAnnual = listPrice;
+
+  for (let iter = 0; iter < 50; iter++) {
+    const mid = (lo + hi) / 2;
+    const trial = calculatePricing({
+      ...input,
+      requestedDiscountPercent: mid,
+      discountType: DISCOUNT_TYPES.BOTH,
+      additionalDiscountAmount: 0,
+    });
+    const diff = Math.abs(trial.totalAnnual - targetAnnual);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestPct = mid;
+      bestAnnual = trial.totalAnnual;
+    }
+    if (trial.totalAnnual > targetAnnual) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+    if (diff < 50) break; // close enough (within $50 due to rounding)
+  }
+
+  // Round to 2 decimal places
+  bestPct = Math.round(bestPct * 100) / 100;
+
+  return {
+    discountPercent: bestPct,
+    discountType: DISCOUNT_TYPES.BOTH,
+    achievedAnnual: bestAnnual,
+    listPriceAnnual: listPrice,
   };
 }
 
