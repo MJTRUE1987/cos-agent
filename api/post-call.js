@@ -11,6 +11,13 @@ const HUBSPOT_BASE = 'https://api.hubapi.com';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const {
@@ -191,13 +198,59 @@ Return ONLY the email body in HTML format using <p> tags. Do not include subject
         }),
       });
       const emailData = await emailRes.json();
+      const emailBody = emailData.content?.[0]?.text || '';
+      const emailTo = contactEmail || '';
+      const emailSubject = `${company} — Follow Up`;
       result.email = {
-        body: emailData.content?.[0]?.text || '',
-        to: contactEmail || '',
+        body: emailBody,
+        to: emailTo,
         cc: 'brian@prescientai.com',
-        subject: `${company} — Follow Up`,
+        subject: emailSubject,
         granolaUrl,
       };
+
+      // Actually create Gmail draft (not just return the text)
+      const gClientId = process.env.GOOGLE_CLIENT_ID;
+      const gClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const gRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+      if (gClientId && gClientSecret && gRefreshToken && emailTo) {
+        try {
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              client_id: gClientId, client_secret: gClientSecret,
+              refresh_token: gRefreshToken, grant_type: 'refresh_token',
+            }),
+          });
+          const tokenData = await tokenRes.json();
+          if (tokenData.access_token) {
+            const rawEmail = [
+              `To: ${emailTo}`,
+              `Cc: brian@prescientai.com`,
+              `Subject: ${emailSubject}`,
+              `Content-Type: text/html; charset=utf-8`,
+              '',
+              emailBody,
+            ].join('\r\n');
+            const encoded = Buffer.from(rawEmail).toString('base64url');
+            const draftRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: { raw: encoded } }),
+            });
+            const draftData = await draftRes.json();
+            if (draftData.id) {
+              result.email.draftId = draftData.id;
+              result.email.draftCreated = true;
+              console.log(`[post-call] Gmail draft created: ${draftData.id} for ${company}`);
+            }
+          }
+        } catch (draftErr) {
+          console.error('[post-call] Gmail draft creation failed:', draftErr.message || draftErr);
+          // Non-fatal — email body is still returned for manual use
+        }
+      }
     }
 
     if (step === 'email') return res.status(200).json({ success: true, ...result });

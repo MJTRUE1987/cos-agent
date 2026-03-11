@@ -2577,7 +2577,7 @@ async function createGmailDraft(itemId, alsoCrm) {
     const res = await apiFetch('/api/draft-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, cc: cc || undefined, subject, body }),
+      body: JSON.stringify({ to, cc: cc || undefined, subject, body, threadId: ACTIONS.find(a => a.id === itemId)?.threadId || undefined }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to create draft');
