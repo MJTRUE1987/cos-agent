@@ -399,6 +399,9 @@ function saveApiKey() {
 // Last refreshed: March 10, 2026 at 12:00 AM ET
 // ═══════════════════════════════════════
 
+// XSS protection for innerHTML contexts
+function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 const OWNERS = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", "1003618676": "Jason", "84289936": "Michael O", "82544484": "Jason N" };
 const OWNER_CLASS = { "Mike": "owner-mike", "Brian": "owner-brian", "Will": "owner-will" };
 const TODAY = new Date();
@@ -634,12 +637,12 @@ function _matchMeeting(action, meetings, log) {
     return { matchedMeeting: directMatch, hasGranola: !!(directMatch.granolaId||directMatch.url||directMatch.granolaUrl),
       isUpcoming: !!directMatch.upcoming, isPast: !directMatch.upcoming };
   }
-  // Fuzzy match
+  // Fuzzy match (require 3+ chars for substring matching)
   const companyWords = companyLower.split(/\s+/).filter(w => w.length >= 4);
-  const fuzzyMatch = meetings.find(m => {
+  const fuzzyMatch = companyLower.length >= 3 ? meetings.find(m => {
     const tl = (m.title||'').toLowerCase(), pl = (m.people||'').toLowerCase();
     return tl.includes(companyLower) || pl.includes(companyLower) || companyWords.some(w => tl.includes(w) || pl.includes(w));
-  });
+  }) : null;
   if (fuzzyMatch) {
     log.push({ company: action.company, source: 'meeting', match: fuzzyMatch.title, method: 'fuzzy' });
     return { matchedMeeting: fuzzyMatch, hasGranola: !!(fuzzyMatch.granolaId||fuzzyMatch.url||fuzzyMatch.granolaUrl),
@@ -651,8 +654,13 @@ function _matchMeeting(action, meetings, log) {
 
 function _matchPipelineDeal(action, pipeline, log) {
   if (!pipeline || pipeline.length === 0) return null;
-  const companyLower = action.company.toLowerCase();
-  const deal = pipeline.find(d => { const n = (d.name||'').toLowerCase(); return n.includes(companyLower) || companyLower.includes(n); });
+  const companyLower = action.company.toLowerCase().trim();
+  // Require minimum 3-char match to prevent short names ("AI", "S") from false-matching everything
+  const deal = pipeline.find(d => {
+    const n = (d.name||'').toLowerCase().trim();
+    if (n.length < 3 || companyLower.length < 3) return n === companyLower; // Exact match only for short names
+    return n.includes(companyLower) || companyLower.includes(n);
+  });
   if (deal) {
     const sl = (deal.stage||'').toLowerCase();
     log.push({ company: action.company, source: 'crm', deal: deal.name, stage: deal.stage });
@@ -1038,6 +1046,9 @@ async function syncInBackground() {
 
     // Recompute signal states after merge
     runSignalEngine();
+
+    // Refresh calendar to pick up externally-booked meetings
+    loadCalendar();
 
     // Update UI
     renderCurrentTab();
@@ -2056,6 +2067,12 @@ function markDone(id) {
   runSignalEngine();
   updateProgressBadge();
   addChat("agent", `<span style="color:#10b981;font-weight:600;">✓ ${a.company} — done.</span> ${getOpen().length} remaining.`);
+  // Persist to server
+  apiFetch('/api/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'upsert', actions: ACTIONS }),
+  }).catch(err => console.error('[markDone] Persist failed:', err));
   setTimeout(() => advanceToNext(), 300);
 }
 
@@ -2078,6 +2095,12 @@ function archiveItem(id) {
   runSignalEngine();
   updateProgressBadge();
   addChat("agent", `<span style="color:#64748b;">✕ ${a.company} — archived.</span> ${getOpen().length} remaining.`);
+  // Persist to server
+  apiFetch('/api/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'upsert', actions: ACTIONS }),
+  }).catch(err => console.error('[archiveItem] Persist failed:', err));
   setTimeout(() => advanceToNext(), 300);
 }
 
@@ -2131,7 +2154,7 @@ function renderContextBar() {
         </label>
       </div>
       <div class="ctx-company-row">
-        <div class="ctx-company-name">${sel.company}${dv}</div>
+        <div class="ctx-company-name">${esc(sel.company)}${dv}</div>
       </div>
       <div class="ctx-quick-actions">
         ${_buildContextButtons(sel)}
@@ -5424,10 +5447,10 @@ function renderActionItem(a) {
   const introTag = a.isIntro ? `<span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:1px 6px;border-radius:3px;">🤝 intro</span> ` : '';
 
   return `<div class="item ${isDone?'done-item':''} ${isSel?'selected':''}" onclick="${isDone?'':`selectItem(${a.id})`}">
-    <span class="company tag ${a.color}">${a.company}</span>
+    <span class="company tag ${a.color}">${esc(a.company)}</span>
     <div class="body">
-      <div class="task">${a.task}</div>
-      <div class="meta">${introTag}${a.meta||""} ${badge} ${dv}</div>
+      <div class="task">${esc(a.task)}</div>
+      <div class="meta">${introTag}${esc(a.meta)||""} ${badge} ${dv}</div>
       ${aiRec ? `<div style="margin-top:4px;">${aiRec}</div>` : ""}
     </div>
     ${isDone ? '<div class="actions"><span class="tag tg">&#10003;</span></div>' : `

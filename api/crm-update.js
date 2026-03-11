@@ -305,7 +305,29 @@ Return ONLY valid JSON, no markdown.`,
         if (!dealName) return res.status(400).json({ error: 'dealName required' });
         console.log(`[crm:create_lead] Creating lead: ${dealName}, contact: ${leadName} <${leadEmail}>`);
 
-        const results = {};
+        // Dedup check — search for existing company/contact/deal before creating
+        const dedupResults = {};
+        try {
+          const [compSearch, contactSearch] = await Promise.all([
+            fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/search`, {
+              method: 'POST', headers,
+              body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'name', operator: 'CONTAINS_TOKEN', value: dealName }] }], limit: 5 }),
+            }).then(r => r.json()).catch(() => ({ results: [] })),
+            leadEmail ? fetch(`${HUBSPOT_BASE}/crm/v3/objects/contacts/search`, {
+              method: 'POST', headers,
+              body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: leadEmail }] }], limit: 5 }),
+            }).then(r => r.json()).catch(() => ({ results: [] })) : Promise.resolve({ results: [] }),
+          ]);
+          dedupResults.existingCompanies = compSearch.results || [];
+          dedupResults.existingContacts = contactSearch.results || [];
+          if (dedupResults.existingCompanies.length > 0 || dedupResults.existingContacts.length > 0) {
+            console.warn(`[crm:create_lead] Potential duplicates found for "${dealName}": ${dedupResults.existingCompanies.length} companies, ${dedupResults.existingContacts.length} contacts`);
+          }
+        } catch (e) {
+          console.error('[crm:create_lead] Dedup check failed:', e.message);
+        }
+
+        const results = { dedupWarning: (dedupResults.existingCompanies?.length > 0 || dedupResults.existingContacts?.length > 0) ? `Found ${dedupResults.existingCompanies?.length || 0} existing companies and ${dedupResults.existingContacts?.length || 0} existing contacts matching "${dealName}"` : null };
 
         // 1. Create company
         try {
