@@ -3903,7 +3903,7 @@ function showSlackMenu(id) {
       : ['general','random','team-customer-success','team-data-science','team-marketing'].map(n =>
           `<button class="slack-opt" onclick="pickSlackTarget('#${n}','#${n}')">#${n}</button>`).join("");
     const personOpts = SLACK_USERS.length > 0
-      ? SLACK_USERS.slice(0, 30).map(u => `<button class="slack-opt" onclick="pickSlackTarget('${u.id}','@${u.displayName || u.name}')">@${u.displayName || u.name}</button>`).join("")
+      ? SLACK_USERS.map(u => `<button class="slack-opt" onclick="pickSlackTarget('${u.id}','@${u.displayName || u.name}')">@${u.displayName || u.name}</button>`).join("")
       : ['Brian','Will','Jason','Elliot','Ali','Alicia','Nathan'].map(n =>
           `<button class="slack-opt" onclick="pickSlackTarget('@${n}','@${n}')">@${n}</button>`).join("");
 
