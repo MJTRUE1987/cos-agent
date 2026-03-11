@@ -358,6 +358,43 @@
 
 <script>
 // ═══════════════════════════════════════
+// AUTH + API HELPER
+// ═══════════════════════════════════════
+let _cosApiKey = localStorage.getItem('cos_api_key') || '';
+
+function apiFetch(url, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), 'Authorization': 'Bearer ' + _cosApiKey };
+  return fetch(url, opts);
+}
+
+function showApiKeyPrompt() {
+  const modal = document.getElementById('modalContainer');
+  modal.innerHTML = `<div class="modal-overlay" onclick="event.stopPropagation()">
+    <div class="modal" style="width:400px;">
+      <div class="modal-header"><span class="modal-title">API Key Required</span></div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:#94a3b8;margin-bottom:14px;">Enter your COS API key to authenticate.</p>
+        <input type="password" id="apiKeyInput" class="modal-input" placeholder="cos_..." autofocus>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn-primary" onclick="saveApiKey()">Save</button>
+      </div>
+    </div>
+  </div>`;
+  const inp = document.getElementById('apiKeyInput');
+  if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveApiKey(); });
+}
+
+function saveApiKey() {
+  const inp = document.getElementById('apiKeyInput');
+  if (!inp || !inp.value.trim()) return;
+  _cosApiKey = inp.value.trim();
+  localStorage.setItem('cos_api_key', _cosApiKey);
+  document.getElementById('modalContainer').innerHTML = '';
+  loadData().then(() => { renderCurrentTab(); syncInBackground(); startAutoSync(); });
+}
+
+// ═══════════════════════════════════════
 // DATA — Live from HubSpot + Gmail + Granola
 // Last refreshed: March 10, 2026 at 12:00 AM ET
 // ═══════════════════════════════════════
@@ -403,11 +440,470 @@ const CAT_CONFIG = {
 };
 
 // ═══════════════════════════════════════
+// REVENUE SIGNAL ENGINE (client-side)
+// Reconciles email + calendar + CRM + meeting signals
+// ═══════════════════════════════════════
+
+const SIGNAL_STATE_RECS = {
+  CLOSED_WON:          { rec: 'Deal closed-won',                        chips: ['crm'],                                    suppress: ['draft','bump','proposal','prep'] },
+  CLOSED_LOST:         { rec: 'Deal closed-lost',                       chips: ['crm'],                                    suppress: ['draft','bump','proposal','prep'] },
+  MEETING_COMPLETED:   { rec: 'Meeting completed — run post-call?',     chips: ['postcall','crm','draft'],                 suppress: [] },
+  MEETING_BOOKED:      { rec: 'Meeting scheduled — generate prep?',     chips: ['prep','crm'],                             suppress: ['draft','bump'] },
+  ALREADY_SCHEDULED:   { rec: 'Meeting already on calendar',            chips: ['prep','crm'],                             suppress: ['draft','bump','draft_calendly'] },
+  PROPOSAL_ACTIVE:     { rec: 'Proposal sent — follow up?',            chips: ['draft','crm'],                            suppress: [] },
+  FOLLOW_UP_REQUIRED:  { rec: 'Follow up needed',                       chips: ['draft','bump','crm'],                     suppress: [] },
+  AVAILABLE_TO_BOOK:   { rec: 'Time available — confirm + send invite', chips: ['confirm_invite','alt_times','crm'],       suppress: ['draft','bump','draft_calendly'] },
+  SCHEDULING_CONFLICT: { rec: 'Time conflicts — suggest alternatives',  chips: ['alt_times','draft','crm'],                suppress: ['bump','draft_calendly'] },
+  SCHEDULING_PROPOSED: { rec: 'Proposed time — check availability',     chips: ['confirm_invite','alt_times','crm'],       suppress: ['draft','bump','draft_calendly'] },
+  WAITING_ON_PROSPECT: { rec: 'Waiting for prospect to pick a time',    chips: ['bump','crm'],                             suppress: ['draft_calendly'] },
+  SCHEDULING_INTENT:   { rec: 'Send scheduling link',                   chips: ['draft_calendly','crm'],                   suppress: [] },
+  REPLIED:             { rec: 'Prospect replied — review',              chips: ['draft','crm'],                            suppress: [] },
+  INTRO_RECEIVED:      { rec: 'Warm intro — reply with Calendly',       chips: ['intro_reply','create_lead','prep'],       suppress: [] },
+  NEW_INBOUND:         { rec: null, chips: null, suppress: [] },
+};
+
+const SIGNAL_STATE_COLORS = {
+  CLOSED_WON: '#10b981', CLOSED_LOST: '#ef4444', MEETING_COMPLETED: '#7c3aed',
+  MEETING_BOOKED: '#a855f7', ALREADY_SCHEDULED: '#a855f7', PROPOSAL_ACTIVE: '#f59e0b',
+  FOLLOW_UP_REQUIRED: '#f59e0b', AVAILABLE_TO_BOOK: '#10b981', SCHEDULING_CONFLICT: '#ef4444',
+  SCHEDULING_PROPOSED: '#22d3ee', WAITING_ON_PROSPECT: '#f59e0b',
+  SCHEDULING_INTENT: '#22d3ee', REPLIED: '#60a5fa', INTRO_RECEIVED: '#10b981', NEW_INBOUND: '#94a3b8',
+};
+
+const SIGNAL_STATE_LABELS = {
+  CLOSED_WON: 'WON', CLOSED_LOST: 'LOST', MEETING_COMPLETED: 'MTG DONE',
+  MEETING_BOOKED: 'MTG BOOKED', ALREADY_SCHEDULED: 'SCHEDULED', PROPOSAL_ACTIVE: 'PROPOSAL',
+  FOLLOW_UP_REQUIRED: 'FOLLOW UP', AVAILABLE_TO_BOOK: 'OPEN SLOT', SCHEDULING_CONFLICT: 'CONFLICT',
+  SCHEDULING_PROPOSED: 'TIME PROPOSED', WAITING_ON_PROSPECT: 'WAITING',
+  SCHEDULING_INTENT: 'SCHEDULING', REPLIED: 'REPLIED', INTRO_RECEIVED: 'INTRO', NEW_INBOUND: 'NEW',
+};
+
+function getStateColor(state) { return SIGNAL_STATE_COLORS[state] || '#94a3b8'; }
+function formatStateName(state) { return SIGNAL_STATE_LABELS[state] || state; }
+
+function runSignalEngine() {
+  const { results, log } = _computeSignalStates(ACTIONS, CALENDAR_EVENTS, MEETINGS, PIPELINE);
+  // Debug output
+  const resolutions = log.filter(l => l.source === 'resolution');
+  if (resolutions.length > 0) {
+    console.log('[signal-engine] Computed states for ' + results.size + ' actions:',
+      resolutions.map(l => l.company + ':' + l.state).join(', '));
+  }
+  // Log scheduling details
+  const schedLogs = log.filter(l => l.source === 'scheduling');
+  schedLogs.forEach(l => {
+    console.log('[signal-engine:scheduling] ' + l.company + ': ' + l.result +
+      (l.proposed ? ' proposed="' + l.proposed + '"' : '') +
+      (l.conflicts ? ' conflicts=' + l.conflicts : '') +
+      (l.event ? ' event="' + l.event + '"' : ''));
+  });
+  // Log suppressed recommendations
+  for (const [id, state] of results) {
+    const action = ACTIONS.find(a => a.id === id);
+    if (action && state.recommendation.overridden && state.recommendation.originalAiRec) {
+      const suppReason = state.recommendation.suppress?.length > 0 ? ' (suppressing: ' + state.recommendation.suppress.join(',') + ')' : '';
+      console.debug('[signal-engine] ' + action.company + ': ' + state.canonicalState +
+        ' — "' + state.recommendation.text + '" (was: "' + state.recommendation.originalAiRec + '")' + suppReason);
+    }
+  }
+  // Emit live feed items for state changes
+  emitSignalFeedItems(results);
+  return results;
+}
+
+function _computeSignalStates(actions, calendarEvents, meetings, pipeline) {
+  const log = [];
+  const results = new Map();
+  for (const action of actions) {
+    if (action.status !== 'open') continue;
+    const signals = _collectSignals(action, calendarEvents, meetings, pipeline, log);
+    const state = _resolveCanonicalState(signals, log, action.company);
+    const recommendation = _mapStateToRec(state, action, signals);
+    const signalState = { canonicalState: state, signals, recommendation, computedAt: new Date().toISOString() };
+    action._signalState = signalState;
+    results.set(action.id, signalState);
+  }
+  return { results, log };
+}
+
+function _collectSignals(action, calendarEvents, meetings, pipeline, log) {
+  const signals = { email: null, calendar: null, meeting: null, crm: null, scheduling: null };
+  signals.email = _extractEmailSignal(action);
+  log.push({ company: action.company, source: 'email', signal: signals.email });
+  signals.calendar = _matchCalendarEvent(action, calendarEvents, log);
+  signals.meeting = _matchMeeting(action, meetings, log);
+  signals.crm = _matchPipelineDeal(action, pipeline, log);
+  signals.scheduling = _resolveScheduling(action, signals.email, calendarEvents, signals.calendar, log);
+  return signals;
+}
+
+function _extractEmailSignal(action) {
+  const daysSince = _signalDaysBetween(action.lastActivity, new Date());
+  const textLower = ((action.emailSummary||'') + ' ' + (action.task||'') + ' ' + (action.meta||'') + ' ' + (action.aiRec||'') + ' ' + (action.latestReply||'')).toLowerCase();
+  return {
+    hasReply: /\breplied\b|\bresponse\b|\bre:/.test(textLower),
+    daysSinceActivity: daysSince,
+    isIntro: !!action.isIntro,
+    schedulingIntent: /schedul|calendly|set up.*time|book.*call|availab|setting up time|can you do|how about|let'?s do/i.test(textLower),
+    proposalSent: /proposal sent|order form sent|pricing sent|quote sent/i.test(textLower),
+    waitingForReply: daysSince >= 2 && /\b(sent|followed up|no response|waiting|nudge)\b/i.test(textLower),
+    hasProposedTime: /\d{1,2}(?::\d{2})?\s*(?:am|pm)/i.test(textLower),
+  };
+}
+
+function _signalExtractEmails(action) {
+  const sources = [action.draftPrompt||'', action.crmPrompt||'', action.emailSummary||'', action.meta||'',
+    ...(action.prospects||[]).map(p=>p.email||''), ...(action.replyTo||[])];
+  const all = sources.join(' ').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
+  return [...new Set(all)].filter(e => !e.includes('prescientai.com') && !e.includes('prescient.ai'));
+}
+
+function _signalExtractNames(action) {
+  const names = [];
+  (action.prospects||[]).forEach(p => { if (p.name) names.push(p.name.toLowerCase()); });
+  const metaNames = (action.meta||'').match(/^([A-Z][a-z]+ [A-Z][a-z]+)/);
+  if (metaNames) names.push(metaNames[1].toLowerCase());
+  const taskNames = (action.task||'').match(/(?:with|from)\s+([A-Z][a-z]+ [A-Z][a-z]+)/);
+  if (taskNames) names.push(taskNames[1].toLowerCase());
+  return [...new Set(names)];
+}
+
+function _matchCalendarEvent(action, calendarEvents, log) {
+  if (!calendarEvents || calendarEvents.length === 0) return null;
+  const companyLower = action.company.toLowerCase();
+  const actionEmails = _signalExtractEmails(action);
+  const actionNames = _signalExtractNames(action);
+  let bestMatch = null, bestScore = 0;
+
+  for (const ev of calendarEvents) {
+    let score = 0;
+    const reasons = [];
+    const evAttendees = ev.attendees || ev.externalAttendees || [];
+    const evEmails = evAttendees.map(a => (a.email||'').toLowerCase()).filter(Boolean);
+
+    // +5: exact attendee email match
+    for (const ae of actionEmails) {
+      if (evEmails.includes(ae.toLowerCase())) { score += 5; reasons.push('email_match:'+ae); break; }
+    }
+    // +3: same company domain
+    const evDomains = evEmails.map(e => e.split('@')[1]).filter(Boolean);
+    const actionDomains = actionEmails.map(e => e.split('@')[1]).filter(Boolean);
+    if (evDomains.some(d => actionDomains.includes(d)) ||
+        evDomains.some(d => d.includes(companyLower.replace(/\s+/g,'')) || companyLower.includes(d.split('.')[0]))) {
+      score += 3; reasons.push('domain_match');
+    }
+    // +2: contact name in title/attendees
+    const titleLower = (ev.title||ev.summary||'').toLowerCase();
+    const attendeeNames = evAttendees.map(a => (a.name||'').toLowerCase());
+    for (const name of actionNames) {
+      if (name.length >= 3 && (titleLower.includes(name) || attendeeNames.some(an => an.includes(name)))) {
+        score += 2; reasons.push('name_match:'+name); break;
+      }
+    }
+    // +2: company name in meeting title
+    const companyWords = companyLower.split(/\s+/).filter(w => w.length >= 4);
+    if (titleLower.includes(companyLower) || companyWords.some(w => titleLower.includes(w))) {
+      score += 2; reasons.push('company_in_title');
+    }
+    // +2: event within 7 days of thread
+    const evDate = new Date(ev.start);
+    const actDate = new Date(action.lastActivity);
+    if (!isNaN(evDate) && !isNaN(actDate) && Math.abs(evDate - actDate) <= 7*86400000) {
+      score += 2; reasons.push('time_proximity');
+    }
+    if (score > bestScore) { bestScore = score; bestMatch = { event: ev, confidence: score, reasons }; }
+  }
+
+  if (bestScore >= 5 && bestMatch) {
+    const evStart = new Date(bestMatch.event.start);
+    log.push({ company: action.company, source: 'calendar', match: bestMatch.event.title, confidence: bestScore, reasons: bestMatch.reasons });
+    return { matchedEvent: bestMatch.event, confidence: bestScore, reasons: bestMatch.reasons,
+      isUpcoming: evStart > new Date(), isPast: evStart <= new Date() };
+  }
+  log.push({ company: action.company, source: 'calendar', match: null, bestScore });
+  return null;
+}
+
+function _matchMeeting(action, meetings, log) {
+  if (!meetings || meetings.length === 0) return null;
+  const companyLower = action.company.toLowerCase();
+  // Direct actionId link
+  const directMatch = meetings.find(m => m.actionId === action.id);
+  if (directMatch) {
+    log.push({ company: action.company, source: 'meeting', match: directMatch.title, method: 'actionId' });
+    return { matchedMeeting: directMatch, hasGranola: !!(directMatch.granolaId||directMatch.url||directMatch.granolaUrl),
+      isUpcoming: !!directMatch.upcoming, isPast: !directMatch.upcoming };
+  }
+  // Fuzzy match
+  const companyWords = companyLower.split(/\s+/).filter(w => w.length >= 4);
+  const fuzzyMatch = meetings.find(m => {
+    const tl = (m.title||'').toLowerCase(), pl = (m.people||'').toLowerCase();
+    return tl.includes(companyLower) || pl.includes(companyLower) || companyWords.some(w => tl.includes(w) || pl.includes(w));
+  });
+  if (fuzzyMatch) {
+    log.push({ company: action.company, source: 'meeting', match: fuzzyMatch.title, method: 'fuzzy' });
+    return { matchedMeeting: fuzzyMatch, hasGranola: !!(fuzzyMatch.granolaId||fuzzyMatch.url||fuzzyMatch.granolaUrl),
+      isUpcoming: !!fuzzyMatch.upcoming, isPast: !fuzzyMatch.upcoming };
+  }
+  log.push({ company: action.company, source: 'meeting', match: null });
+  return null;
+}
+
+function _matchPipelineDeal(action, pipeline, log) {
+  if (!pipeline || pipeline.length === 0) return null;
+  const companyLower = action.company.toLowerCase();
+  const deal = pipeline.find(d => { const n = (d.name||'').toLowerCase(); return n.includes(companyLower) || companyLower.includes(n); });
+  if (deal) {
+    const sl = (deal.stage||'').toLowerCase();
+    log.push({ company: action.company, source: 'crm', deal: deal.name, stage: deal.stage });
+    return { deal, stage: deal.stage, isClosedWon: sl === 'closed won', isClosedLost: sl === 'closed lost', isClosed: sl.startsWith('closed') };
+  }
+  log.push({ company: action.company, source: 'crm', deal: null });
+  return null;
+}
+
+// ── Scheduling time extraction + availability (client-side) ──
+
+function _extractProposedTimes(action) {
+  const text = [action.emailSummary||'', action.task||'', action.meta||'', action.aiRec||'', action.latestReply||''].join(' ');
+  const clean = text.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/g, ' ');
+  const proposals = [];
+
+  const patterns = [
+    /(?:can you do|how about|let's do|propose|suggesting|available)\s+(?:on\s+)?(\w+ \d{1,2}(?:st|nd|rd|th)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\w{2,4})?/gi,
+    /((?:jan|feb|mar|march|apr|april|may|jun|june|jul|july|aug|sept?|oct|nov|dec)\w*\s+\d{1,2}(?:st|nd|rd|th)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\w{2,4})?/gi,
+    /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\w{2,4})?/gi,
+    /((?:mon|tue|wed|thu|fri|sat|sun)\w*)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\w{2,4})?/gi,
+  ];
+
+  for (const pat of patterns) {
+    let m;
+    while ((m = pat.exec(clean)) !== null) {
+      const parsed = _parseProposedDateTime(m);
+      if (parsed) proposals.push({ raw: m[0].trim(), ...parsed });
+    }
+  }
+
+  // Explicit proposedTimes override parsed — these are authoritative
+  if (action.proposedTimes?.length) {
+    const explicit = [];
+    for (const pt of action.proposedTimes) {
+      if (pt.date) explicit.push({ raw: pt.raw || pt.date, date: new Date(pt.date), timezone: pt.timezone || 'EST', source: 'explicit' });
+    }
+    if (explicit.length > 0) return explicit;
+  }
+
+  // Deduplicate parsed by rounding to nearest 15 min
+  const seen = new Set();
+  return proposals.filter(p => {
+    if (!p.date) return false;
+    const key = Math.round(p.date.getTime() / 900000);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function _parseProposedDateTime(match) {
+  const now = new Date();
+  const year = now.getFullYear();
+  let datePart = match[1], timePart = match[2], tzPart = match[3];
+  if (!datePart || !timePart) return null;
+  datePart = datePart.replace(/(st|nd|rd|th)/gi, '').trim();
+
+  const tm = timePart.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (!tm) return null;
+  let hrs = parseInt(tm[1]), mins = parseInt(tm[2]||'0');
+  if (tm[3].toLowerCase() === 'pm' && hrs < 12) hrs += 12;
+  if (tm[3].toLowerCase() === 'am' && hrs === 12) hrs = 0;
+
+  let d;
+  const dowMatch = datePart.match(/^(mon|tue|wed|thu|fri|sat|sun)/i);
+  if (dowMatch) {
+    const dayMap = {sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
+    const target = dayMap[dowMatch[1].toLowerCase().substring(0,3)];
+    d = new Date(now);
+    let ahead = target - d.getDay();
+    if (ahead <= 0) ahead += 7;
+    d.setDate(d.getDate() + ahead);
+  } else if (/^\d+\/\d+/.test(datePart)) {
+    const parts = datePart.split('/');
+    d = new Date(parts[2] ? (parseInt(parts[2]) < 100 ? parseInt(parts[2])+2000 : parseInt(parts[2])) : year, parseInt(parts[0])-1, parseInt(parts[1]));
+  } else {
+    const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    const mm = datePart.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*/i);
+    const dd = datePart.match(/\d+/);
+    if (!mm || !dd) return null;
+    d = new Date(year, months[mm[1].toLowerCase().substring(0,3)], parseInt(dd[0]));
+    if (d < now && (now - d) > 30*86400000) d.setFullYear(year+1);
+  }
+  if (!d || isNaN(d)) return null;
+  d.setHours(hrs, mins, 0, 0);
+  return { date: d, timezone: tzPart ? tzPart.toUpperCase() : null, source: 'parsed' };
+}
+
+function _checkAvailability(proposedDate, calendarEvents) {
+  if (!proposedDate || !calendarEvents?.length) return { available: true, conflicts: [] };
+  const pStart = new Date(proposedDate);
+  const pEnd = new Date(pStart.getTime() + 30*60000);
+  const conflicts = [];
+  for (const ev of calendarEvents) {
+    const eStart = new Date(ev.start);
+    const eEnd = new Date(ev.end || eStart.getTime()+3600000);
+    if (pStart < eEnd && pEnd > eStart) {
+      conflicts.push({ title: ev.title||ev.summary||'(No title)', start: ev.start, end: ev.end });
+    }
+  }
+  return { available: conflicts.length === 0, conflicts };
+}
+
+function _findAlternativeSlots(proposedDate, calendarEvents, count) {
+  count = count || 3;
+  const alts = [];
+  const base = new Date(proposedDate);
+  const offsets = [{d:0,h:-1},{d:0,h:1},{d:0,h:2},{d:1,h:0},{d:1,h:-1},{d:1,h:1},{d:-1,h:0},{d:2,h:0}];
+  for (const off of offsets) {
+    if (alts.length >= count) break;
+    const c = new Date(base);
+    c.setDate(c.getDate()+off.d);
+    c.setHours(c.getHours()+off.h);
+    if (c.getDay()===0||c.getDay()===6) continue;
+    if (c.getHours()<9||c.getHours()>=17) continue;
+    if (c <= new Date()) continue;
+    if (_checkAvailability(c, calendarEvents).available) alts.push(c);
+  }
+  return alts;
+}
+
+function _resolveScheduling(action, emailSignal, calendarEvents, calendarMatch, log) {
+  const proposedTimes = _extractProposedTimes(action);
+  if (proposedTimes.length === 0 && !emailSignal?.schedulingIntent) return null;
+
+  if (calendarMatch?.isUpcoming) {
+    log.push({ company: action.company, source: 'scheduling', result: 'already_scheduled', event: calendarMatch.matchedEvent?.title });
+    return { status: 'already_scheduled', matchedEvent: calendarMatch.matchedEvent, proposedTimes };
+  }
+
+  if (proposedTimes.length > 0) {
+    const primary = proposedTimes[0];
+    const availability = _checkAvailability(primary.date, calendarEvents);
+    const alternatives = availability.available ? [] : _findAlternativeSlots(primary.date, calendarEvents);
+    const result = { status: availability.available ? 'available_to_book' : 'conflict', proposedTimes, primaryProposal: primary, availability, alternatives };
+    log.push({ company: action.company, source: 'scheduling', result: result.status, proposed: primary.raw, proposedDate: primary.date?.toISOString(), conflicts: availability.conflicts.length });
+    return result;
+  }
+
+  const textLower = [action.emailSummary||'', action.task||'', action.latestReply||''].join(' ').toLowerCase();
+  if (/you (sent|replied|shared).*availab|sent.*calendly|here.*my.*availab/i.test(textLower)) {
+    log.push({ company: action.company, source: 'scheduling', result: 'waiting_on_prospect' });
+    return { status: 'waiting_on_prospect', proposedTimes: [] };
+  }
+  log.push({ company: action.company, source: 'scheduling', result: 'intent_only' });
+  return { status: 'intent_only', proposedTimes: [] };
+}
+
+function _resolveCanonicalState(signals, log, company) {
+  const { email, calendar, meeting, crm, scheduling } = signals;
+  if (crm?.isClosedWon) return _logSignalState('CLOSED_WON', company, log);
+  if (crm?.isClosedLost) return _logSignalState('CLOSED_LOST', company, log);
+  if (meeting?.isPast && meeting.hasGranola) return _logSignalState('MEETING_COMPLETED', company, log);
+  if (calendar?.isPast) return _logSignalState('MEETING_COMPLETED', company, log);
+  if (calendar?.isUpcoming) return _logSignalState('MEETING_BOOKED', company, log);
+  if (meeting?.isUpcoming) return _logSignalState('MEETING_BOOKED', company, log);
+  // Scheduling sub-states
+  if (scheduling?.status === 'already_scheduled') return _logSignalState('ALREADY_SCHEDULED', company, log);
+  if (scheduling?.status === 'available_to_book') return _logSignalState('AVAILABLE_TO_BOOK', company, log);
+  if (scheduling?.status === 'conflict') return _logSignalState('SCHEDULING_CONFLICT', company, log);
+  if (scheduling?.status === 'waiting_on_prospect') return _logSignalState('WAITING_ON_PROSPECT', company, log);
+  if (email?.proposalSent) return _logSignalState('PROPOSAL_ACTIVE', company, log);
+  if (email?.waitingForReply) return _logSignalState('FOLLOW_UP_REQUIRED', company, log);
+  if (scheduling?.proposedTimes?.length > 0) return _logSignalState('SCHEDULING_PROPOSED', company, log);
+  if (email?.schedulingIntent) return _logSignalState('SCHEDULING_INTENT', company, log);
+  if (email?.hasReply) return _logSignalState('REPLIED', company, log);
+  if (email?.isIntro) return _logSignalState('INTRO_RECEIVED', company, log);
+  return _logSignalState('NEW_INBOUND', company, log);
+}
+
+function _logSignalState(state, company, log) { log.push({ company, source: 'resolution', state }); return state; }
+
+function _mapStateToRec(state, action, signals) {
+  const config = SIGNAL_STATE_RECS[state];
+  if (!config || !config.rec) return { text: action.aiRec, chips: null, suppress: [], overridden: false, state };
+  let text = config.rec;
+
+  if (state === 'AVAILABLE_TO_BOOK' && signals.scheduling?.primaryProposal) {
+    const p = signals.scheduling.primaryProposal;
+    const d = p.date;
+    if (d && !isNaN(d)) {
+      const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      text = dn[d.getDay()] + ' ' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase() + ' is OPEN — confirm + send invite';
+    }
+  } else if (state === 'SCHEDULING_CONFLICT' && signals.scheduling?.primaryProposal) {
+    const p = signals.scheduling.primaryProposal;
+    const d = p.date;
+    const conflicts = signals.scheduling.availability?.conflicts || [];
+    const altCount = signals.scheduling.alternatives?.length || 0;
+    if (d && !isNaN(d)) {
+      const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      text = dn[d.getDay()] + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase() + ' conflicts with "' + (conflicts[0]?.title||'another meeting') + '" — ' + altCount + ' alternatives';
+    }
+  } else if (state === 'SCHEDULING_PROPOSED' && signals.scheduling?.primaryProposal) {
+    text = 'Proposed: "' + signals.scheduling.primaryProposal.raw + '" — checking calendar...';
+  } else if (state === 'ALREADY_SCHEDULED' && signals.scheduling?.matchedEvent) {
+    const ev = signals.scheduling.matchedEvent;
+    const d = new Date(ev.start);
+    if (!isNaN(d)) {
+      const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      text = 'Already on calendar: ' + dn[d.getDay()] + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase() + ' — "' + (ev.title||ev.summary) + '"';
+    }
+  } else if (state === 'WAITING_ON_PROSPECT') {
+    text = 'You sent availability — waiting for prospect to book';
+  } else if (state === 'MEETING_BOOKED' && signals.calendar?.matchedEvent) {
+    const ev = signals.calendar.matchedEvent;
+    const d = new Date(ev.start);
+    if (!isNaN(d)) {
+      const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      text = 'Meeting booked ' + dn[d.getDay()] + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase() + ' — generate prep?';
+    }
+  } else if (state === 'MEETING_BOOKED' && signals.meeting?.matchedMeeting) {
+    text = 'Meeting scheduled: ' + (signals.meeting.matchedMeeting.title||signals.meeting.matchedMeeting.date) + ' — generate prep?';
+  } else if (state === 'MEETING_COMPLETED' && signals.meeting?.matchedMeeting) {
+    text = 'Meeting completed: ' + signals.meeting.matchedMeeting.title + ' — run post-call?';
+  }
+  return { text, chips: config.chips, suppress: config.suppress||[], overridden: true, state, originalAiRec: action.aiRec, scheduling: signals.scheduling || null };
+}
+
+function _signalDaysBetween(dateStr, now) {
+  if (!dateStr) return 999;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return 999;
+  return Math.floor((now - d) / 86400000);
+}
+
+// ═══════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════
+async function reseedData() {
+  try {
+    const res = await apiFetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reseed' }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      console.log('[data] KV reseeded:', data);
+      await loadData();
+      runSignalEngine();
+      renderCurrentTab();
+      addFeedItem('sync', 'Data reseeded from latest config', null);
+    }
+  } catch (err) { console.error('Reseed failed:', err); }
+}
+
 async function loadData() {
   try {
-    const res = await fetch("/api/data");
+    const res = await apiFetch("/api/data");
     if (!res.ok) throw new Error("API error: " + res.status);
     const data = await res.json();
     if (data.actions) ACTIONS = data.actions;
@@ -426,7 +922,7 @@ async function loadData() {
 
 async function loadCalendar() {
   try {
-    const res = await fetch("/api/calendar");
+    const res = await apiFetch("/api/calendar");
     if (!res.ok) return;
     const data = await res.json();
     if (data.meetings) {
@@ -452,6 +948,7 @@ async function loadCalendar() {
           });
         }
       });
+      runSignalEngine(); // Reconcile signals now that calendar is loaded
       renderCurrentTab();
     }
   } catch (e) {
@@ -490,7 +987,7 @@ async function syncInBackground() {
   if (indicator) indicator.innerHTML = '<span style="color:#f59e0b;">Syncing...</span>';
 
   try {
-    const res = await fetch('/api/sync', {
+    const res = await apiFetch('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lastSyncedAt: _lastSyncedAt }),
@@ -532,6 +1029,9 @@ async function syncInBackground() {
     _intelligenceCache = null;
     _endOfDayCache = null;
     _endOfWeekCache = null;
+
+    // Recompute signal states after merge
+    runSignalEngine();
 
     // Update UI
     renderCurrentTab();
@@ -629,7 +1129,11 @@ function toggleFeed() {
 }
 
 function addFeedItem(type, text, actionId) {
-  const icons = { email: '\u2709\uFE0F', deal: '\u26A1', meeting: '\uD83D\uDCC5', sync: '\u2714\uFE0F', error: '\u26A0\uFE0F' };
+  const icons = {
+    email: '\u2709\uFE0F', deal: '\u26A1', meeting: '\uD83D\uDCC5', sync: '\u2714\uFE0F', error: '\u26A0\uFE0F',
+    scheduling: '\uD83D\uDCC5', signal: '\uD83D\uDCE1', reply: '\u21A9\uFE0F', conflict: '\u26A0\uFE0F',
+    available: '\u2705', intro: '\uD83E\uDD1D', state_change: '\uD83D\uDD04',
+  };
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
 
@@ -654,6 +1158,54 @@ function addFeedItem(type, text, actionId) {
 
   // Trim DOM to 50 items
   while (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+// Emit signal-state-driven feed items after engine runs
+function emitSignalFeedItems(results) {
+  for (const [id, state] of results) {
+    const action = ACTIONS.find(a => a.id === id);
+    if (!action) continue;
+    const prev = action._prevCanonicalState;
+    const cur = state.canonicalState;
+
+    // Only emit on state change or first computation of interesting states
+    if (prev === cur) continue;
+    action._prevCanonicalState = cur;
+
+    switch (cur) {
+      case 'AVAILABLE_TO_BOOK': {
+        const sched = state.scheduling || state.recommendation?.scheduling;
+        const timeStr = sched?.primaryProposal?.raw || 'proposed time';
+        addFeedItem('available', `<strong style="color:#10b981;">${action.company}</strong> — ${timeStr} is <strong>OPEN</strong>. Confirm + invite!`, id);
+        break;
+      }
+      case 'SCHEDULING_CONFLICT': {
+        const sched = state.scheduling || state.recommendation?.scheduling;
+        const timeStr = sched?.primaryProposal?.raw || 'proposed time';
+        const conflictName = sched?.availability?.conflicts?.[0]?.title || 'another meeting';
+        addFeedItem('conflict', `<strong style="color:#ef4444;">${action.company}</strong> — ${timeStr} <strong>CONFLICTS</strong> with "${conflictName}"`, id);
+        break;
+      }
+      case 'SCHEDULING_PROPOSED':
+        addFeedItem('scheduling', `<strong>${action.company}</strong> — time proposed, checking availability...`, id);
+        break;
+      case 'WAITING_ON_PROSPECT':
+        addFeedItem('scheduling', `<strong>${action.company}</strong> — sent availability, waiting for prospect`, id);
+        break;
+      case 'MEETING_BOOKED':
+        addFeedItem('meeting', `<strong style="color:#a855f7;">${action.company}</strong> — meeting booked! ${state.recommendation?.text || ''}`, id);
+        break;
+      case 'MEETING_COMPLETED':
+        addFeedItem('meeting', `<strong>${action.company}</strong> — meeting completed. Run post-call?`, id);
+        break;
+      case 'INTRO_RECEIVED':
+        if (!prev) addFeedItem('intro', `<strong style="color:#10b981;">${action.company}</strong> — warm intro received`, id);
+        break;
+      case 'FOLLOW_UP_REQUIRED':
+        addFeedItem('signal', `<strong style="color:#f59e0b;">${action.company}</strong> — follow-up needed (${state.signals?.email?.daysSinceActivity || '?'}d stale)`, id);
+        break;
+    }
+  }
 }
 
 function updateFeedCount() {
@@ -682,7 +1234,7 @@ async function startMyDay() {
   let intelligence = _intelligenceCache;
   if (!intelligence) {
     try {
-      const intRes = await fetch('/api/intelligence', {
+      const intRes = await apiFetch('/api/intelligence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
@@ -696,7 +1248,7 @@ async function startMyDay() {
   }
 
   try {
-    const res = await fetch('/api/briefing', {
+    const res = await apiFetch('/api/briefing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -805,7 +1357,7 @@ function endWork() { endMyDay(); }
 
 async function saveDailySnapshot() {
   try {
-    await fetch('/api/snapshot', {
+    await apiFetch('/api/snapshot', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save_daily', pipeline: PIPELINE, actions: ACTIONS }),
     });
@@ -814,7 +1366,7 @@ async function saveDailySnapshot() {
 
 async function saveWeeklySnapshot() {
   try {
-    await fetch('/api/snapshot', {
+    await apiFetch('/api/snapshot', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save_weekly', pipeline: PIPELINE, actions: ACTIONS }),
     });
@@ -832,11 +1384,11 @@ async function endMyDay() {
 
   try {
     const [intRes, diffRes] = await Promise.all([
-      !intelligence ? fetch('/api/intelligence', {
+      !intelligence ? apiFetch('/api/intelligence', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
       }) : Promise.resolve(null),
-      fetch('/api/snapshot', {
+      apiFetch('/api/snapshot', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'diff_daily', pipeline: PIPELINE, actions: ACTIONS }),
       }),
@@ -851,7 +1403,7 @@ async function endMyDay() {
   } catch {}
 
   try {
-    const res = await fetch('/api/end-of-day', {
+    const res = await apiFetch('/api/end-of-day', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         actions: ACTIONS, meetings: MEETINGS, pipeline: PIPELINE,
@@ -991,11 +1543,11 @@ async function endOfWeek() {
 
   try {
     const [intRes, diffRes] = await Promise.all([
-      !intelligence ? fetch('/api/intelligence', {
+      !intelligence ? apiFetch('/api/intelligence', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
       }) : Promise.resolve(null),
-      fetch('/api/snapshot', {
+      apiFetch('/api/snapshot', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'diff_weekly', pipeline: PIPELINE, actions: ACTIONS }),
       }),
@@ -1010,7 +1562,7 @@ async function endOfWeek() {
   } catch {}
 
   try {
-    const res = await fetch('/api/end-of-week', {
+    const res = await apiFetch('/api/end-of-week', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         actions: ACTIONS, meetings: MEETINGS, pipeline: PIPELINE,
@@ -1209,7 +1761,7 @@ function renderRecommendation(r) {
 async function loadIntelligence() {
   if (_intelligenceCache) return _intelligenceCache;
   try {
-    const res = await fetch('/api/intelligence', {
+    const res = await apiFetch('/api/intelligence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pipeline: PIPELINE, actions: ACTIONS, meetings: MEETINGS }),
@@ -1236,7 +1788,7 @@ async function runQuickPostCall(item) {
   let granolaNotes = '', granolaUrl = '', contactName = '', contactEmail = '';
 
   try {
-    const grRes = await fetch('/api/granola', {
+    const grRes = await apiFetch('/api/granola', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company: item.company, analyze: true }),
@@ -1263,7 +1815,7 @@ async function runQuickPostCall(item) {
   addChat("agent", `<span style="color:#60a5fa;">Running pipeline: Analyze → Proposal → Email → CRM...</span>`);
 
   try {
-    const res = await fetch('/api/post-call', {
+    const res = await apiFetch('/api/post-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1291,7 +1843,7 @@ async function runQuickPostCall(item) {
     let liHtml = '';
     if (contactName) {
       try {
-        const liRes = await fetch('/api/linkedin', {
+        const liRes = await apiFetch('/api/linkedin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contactName, company: item.company, context: data.analysis?.summary || item.task }),
@@ -1373,11 +1925,64 @@ function selectItem(id) {
       chatMsg += `<div style="margin-top:4px;color:#94a3b8;font-size:10px;">Prospect: ${a.prospects.map(p => `<strong style="color:#fff;">${p.name}</strong>${p.email ? ` &lt;${p.email}&gt;` : ''}`).join(', ')}</div>`;
     }
     chatMsg += `</div>`;
+  } else if (a._signalState?.recommendation?.overridden) {
+    const ss = a._signalState;
+    const sc = getStateColor(ss.canonicalState);
+    chatMsg += `<div style="font-size:11px;color:${sc};margin-bottom:8px;">`;
+    chatMsg += `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${sc}20;color:${sc};margin-right:6px;">${formatStateName(ss.canonicalState)}</span>`;
+    chatMsg += ss.recommendation.text;
+    chatMsg += `</div>`;
+    // Show scheduling detail panel for scheduling states
+    const sched = ss.recommendation?.scheduling || ss.signals?.scheduling;
+    if (sched?.proposedTimes?.length > 0) {
+      const primary = sched.primaryProposal || sched.proposedTimes[0];
+      const isAvail = sched.status === 'available_to_book';
+      const isConflict = sched.status === 'conflict';
+      chatMsg += `<div style="font-size:11px;padding:8px 10px;margin-bottom:8px;border-radius:6px;background:${isAvail ? 'rgba(16,185,129,0.08)' : isConflict ? 'rgba(239,68,68,0.08)' : 'rgba(34,211,238,0.08)'};border:1px solid ${isAvail ? 'rgba(16,185,129,0.2)' : isConflict ? 'rgba(239,68,68,0.2)' : 'rgba(34,211,238,0.2)'};">`;
+      chatMsg += `<div style="font-weight:700;margin-bottom:4px;">${isAvail ? '✅' : isConflict ? '⚠️' : '📅'} Proposed: ${primary.raw || primary.date}</div>`;
+      if (isAvail) {
+        chatMsg += `<div style="color:#10b981;">Calendar is <strong>OPEN</strong> at this time. Confirm + send invite.</div>`;
+      } else if (isConflict) {
+        const conflicts = sched.availability?.conflicts || [];
+        chatMsg += `<div style="color:#ef4444;">Conflicts with: ${conflicts.map(c => '<strong>' + c.title + '</strong>').join(', ')}</div>`;
+        if (sched.alternatives?.length > 0) {
+          const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          chatMsg += `<div style="color:#94a3b8;margin-top:4px;">Alternatives: ${sched.alternatives.map(d => dn[d.getDay()] + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase()).join(', ')}</div>`;
+        }
+      }
+      if (a.latestReplyFrom) {
+        chatMsg += `<div style="color:#64748b;margin-top:4px;font-size:10px;">Proposed by: ${a.latestReplyFrom}${a.latestReplyDate ? ' on ' + a.latestReplyDate : ''}</div>`;
+      }
+      chatMsg += `</div>`;
+    }
+    if (ss.recommendation.originalAiRec && ss.recommendation.originalAiRec !== ss.recommendation.text) {
+      chatMsg += `<div style="font-size:10px;color:#475569;margin-bottom:4px;text-decoration:line-through;">AI: ${ss.recommendation.originalAiRec}</div>`;
+    }
   } else if (a.aiRec) {
     chatMsg += `<div style="font-size:11px;color:#a855f7;margin-bottom:8px;">AI: ${a.aiRec}</div>`;
   }
   if (a.emailSummary) {
-    chatMsg += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${a.emailSummary}</div>`;
+    // When signal engine overrides, strip contradictory status lines from emailSummary
+    let displaySummary = a.emailSummary;
+    const overriddenState = a._signalState?.canonicalState;
+    if (overriddenState && ['MEETING_BOOKED','ALREADY_SCHEDULED','MEETING_COMPLETED','AVAILABLE_TO_BOOK'].includes(overriddenState)) {
+      // Remove stale "Status:" lines that contradict the signal state
+      displaySummary = displaySummary.replace(/<strong>Status:<\/strong>[^<]*(?:<[^>]*>[^<]*)*?(?=<br|$)/gi, '');
+      displaySummary = displaySummary.replace(/Waiting for (?:him|her|them) to book[^<]*/gi, '');
+      displaySummary = displaySummary.replace(/May need a nudge[^<]*/gi, '');
+      displaySummary = displaySummary.replace(/No response[^<]*yet[^<]*/gi, '');
+      // Add meeting context if available
+      const cal = a._signalState?.signals?.calendar;
+      if (cal?.matchedEvent && (overriddenState === 'MEETING_BOOKED' || overriddenState === 'ALREADY_SCHEDULED')) {
+        const ev = cal.matchedEvent;
+        const d = new Date(ev.start);
+        const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        const timeStr = d.toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'}).toLowerCase();
+        displaySummary += `<br><br><strong style="color:#a855f7;">📅 Meeting:</strong> ${ev.title || a.company} — ${dn[d.getDay()]} ${d.getMonth()+1}/${d.getDate()} at ${timeStr}`;
+        if (ev.meetLink) displaySummary += ` · <a href="${ev.meetLink}" target="_blank" style="color:#60a5fa;">Join</a>`;
+      }
+    }
+    chatMsg += `<div style="background:#0a0e1a;border:1px solid #1e293b;border-radius:6px;padding:10px 12px;margin:4px 0;font-size:12px;line-height:1.6;">${displaySummary}</div>`;
     if (a.emailUrl) chatMsg += `<a href="${a.emailUrl}" target="_blank" style="font-size:11px;">Open in Superhuman &rarr;</a>`;
   } else {
     chatMsg += `<div style="color:#94a3b8;font-size:13px;">${a.task}</div>`;
@@ -1593,18 +2198,82 @@ function showModal(title, bodyHtml, footerHtml) {
 // ═══════════════════════════════════════
 async function showDraftModal(item, opts = {}) {
   const { alsoCrm = false, granolaUrl = null, granolaBody = null, callAnalysis = null } = opts;
-  const prompt = item.draftPrompt;
+  let prompt = item.draftPrompt;
+
+  // ── SCHEDULING-AWARE DRAFT OVERRIDE ──
+  // Check THREE sources for proposed times: signal engine, action data, and raw text
+  const ss = item._signalState;
+  const sched = ss?.recommendation?.scheduling || ss?.signals?.scheduling;
+  const replyEmails = (item.replyTo || []).join(', ') || '';
+  const prospectEmails = (item.prospects || []).map(p => p.email).filter(Boolean).join(', ');
+  const allTo = [replyEmails, prospectEmails].filter(Boolean).join(', ');
+
+  // Source 1: Signal engine scheduling data
+  let proposedTime = sched?.primaryProposal || sched?.proposedTimes?.[0];
+
+  // Source 2: Explicit proposedTimes on the action (works even without signal engine)
+  if (!proposedTime && item.proposedTimes?.length > 0) {
+    const pt = item.proposedTimes[0];
+    proposedTime = { raw: pt.raw, date: new Date(pt.date), timezone: pt.timezone, source: 'action_data' };
+  }
+
+  // Source 3: latestReply text — parse proposed time directly
+  if (!proposedTime && item.latestReply) {
+    const timeMatch = item.latestReply.match(/(?:can you do|how about|let's do)?\s*((?:jan|feb|mar|march|apr|april|may|jun|june|jul|july|aug|sept?|oct|nov|dec)\w*\s+\d{1,2}(?:st|nd|rd|th)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm))\s*(\w{2,4})?/i);
+    if (timeMatch) {
+      proposedTime = { raw: timeMatch[0].trim(), source: 'latest_reply' };
+    }
+  }
+
+  // If we have a proposed time from ANY source, override the draft prompt
+  if (proposedTime) {
+    const schedState = ss?.canonicalState;
+    if (schedState === 'SCHEDULING_CONFLICT' && sched?.alternatives?.length > 0) {
+      // Conflict path — suggest alternatives
+      const alts = sched.alternatives;
+      const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const altStr = alts.map(d => dn[d.getDay()] + ' ' + (d.getMonth()+1) + '/' + d.getDate() + ' at ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})).join(', ');
+      prompt = `Draft a reply to ${item.company}. The prospect proposed "${proposedTime.raw}" but you have a conflict. ` +
+        `Suggest these alternative times: ${altStr || 'a few times next week'}. ` +
+        `To: ${allTo || item.company}. CC: brian@prescientai.com. ` +
+        `Be warm and apologetic about the conflict. Keep it brief.`;
+      console.log('[draft] CONFLICT override for ' + item.company);
+    } else {
+      // Confirm path — accept the proposed time
+      prompt = `IMPORTANT: You are writing AS Mike True, CEO of Prescient AI. First person. NOT third person.\n` +
+        `This is a CONFIRMATION email, NOT a follow-up or bump.\n\n` +
+        `The other person proposed a specific meeting time: "${proposedTime.raw}"\n` +
+        `You (Mike) are ACCEPTING this time. Write in FIRST PERSON ("I", "me", "my").\n` +
+        `Do NOT say "works great for Mike" — you ARE Mike. Say "that works perfectly" or "I'm in".\n` +
+        `Do NOT ask for availability. Do NOT say you're flexible on timing.\n\n` +
+        `Draft a brief, warm reply (2-3 sentences max) that:\n` +
+        `1. Confirms "${proposedTime.raw}" works\n` +
+        `2. Says you'll send a calendar invite shortly\n` +
+        `3. Expresses excitement to connect\n\n` +
+        `Sign off as Mike or Michael.\n` +
+        `To: ${allTo || item.company}. CC: brian@prescientai.com.\n` +
+        `Context: ${item.task || item.company}`;
+      console.log('[draft] CONFIRMATION override for ' + item.company + ': proposed=' + proposedTime.raw);
+    }
+  }
+
   if (!prompt && !callAnalysis) { addChat("agent", `No draft context for ${item.company}.`); return; }
 
   // Extract email addresses — for intros, use replyTo array; otherwise parse from prompt
   let toAddr = '';
   let ccAddrs = 'brian@prescientai.com';
 
-  if (item.isIntro && item.replyTo?.length) {
-    // For intros: reply-all to all external recipients
+  if (item.replyTo?.length) {
+    // Use replyTo for intros, scheduling confirmations, and any thread reply
     toAddr = item.replyTo.join(', ');
     ccAddrs = 'brian@prescientai.com';
-    console.log(`[draft] Intro email — reply-all to: ${toAddr}`);
+    // Add prospect emails not in replyTo
+    const prospectExtras = (item.prospects || []).map(p => p.email).filter(e => e && !item.replyTo.includes(e));
+    if (prospectExtras.length) ccAddrs = prospectExtras.join(', ') + ', ' + ccAddrs;
+    console.log(`[draft] Reply-all to: ${toAddr}, cc: ${ccAddrs}`);
+  } else if (item.isIntro) {
+    toAddr = (item.prospects || []).map(p => p.email).filter(Boolean).join(', ');
+    ccAddrs = 'brian@prescientai.com';
   } else {
     const emailMatch = (prompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
     toAddr = emailMatch[0] || '';
@@ -1613,15 +2282,20 @@ async function showDraftModal(item, opts = {}) {
 
   const grLink = granolaUrl || item.granola || '';
 
-  showModal(`✏️ Draft Email — ${item.company}${item.isIntro ? ' (Warm Intro Reply)' : ''}`,
+  const modalTitle = proposedTime
+    ? `📅 Confirm Meeting — ${item.company}`
+    : `✏️ Draft Email — ${item.company}${item.isIntro ? ' (Warm Intro Reply)' : ''}`;
+
+  showModal(modalTitle,
     `<div class="modal-loading"><div class="spin"></div>Generating email with AI...</div>`, '');
 
   try {
     // Build enhanced prompt with Granola context if available
     let fullPrompt = prompt || `Draft a follow-up email to ${item.company} after our call.`;
 
-    // For intro emails, always inject Calendly link
-    if (item.isIntro) {
+    // For intro emails WITHOUT a proposed time, inject Calendly link
+    // (skip Calendly injection if we're confirming a specific time)
+    if (item.isIntro && !proposedTime) {
       fullPrompt += `\n\nCALENDLY LINK (MUST INCLUDE): ${CALENDLY_LINK}\nThis is for "MT Open 30 minutes" — a casual intro call.\nFormat: Include the Calendly link as a clickable HTML anchor. Suggest a few time slots or say "feel free to grab a time that works".`;
     }
 
@@ -1636,7 +2310,7 @@ async function showDraftModal(item, opts = {}) {
     }
     fullPrompt += '\n\nWrite the email body only (no subject line prefix). Use HTML formatting with <p> tags.';
 
-    const res = await fetch('/api/ai', {
+    const res = await apiFetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: fullPrompt }),
@@ -1644,9 +2318,13 @@ async function showDraftModal(item, opts = {}) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'AI failed');
 
-    // For intros, extract original subject from meta for Re: threading
+    // Subject line: use Re: for thread replies, especially for scheduling confirmations
     let subjectGuess = item.company + ' — Follow Up';
-    if (item.isIntro && item.meta) {
+    if (proposedTime) {
+      // Scheduling confirmation — always Re: the original thread
+      const origSubject = item.emailSummary?.match(/Subject:<\/strong>\s*(.*?)(?:<br|$)/)?.[1]?.replace(/^Re:\s*/i, '').trim();
+      subjectGuess = origSubject ? 'Re: ' + origSubject : 'Re: ' + item.company + ' and Prescient AI';
+    } else if (item.isIntro && item.meta) {
       const origSubject = item.meta.split(' | ').slice(1).join(' | ');
       if (origSubject) subjectGuess = (origSubject.startsWith('Re:') ? '' : 'Re: ') + origSubject;
     }
@@ -1700,6 +2378,141 @@ async function showDraftModal(item, opts = {}) {
   }
 }
 
+// ── Scheduling Actions ──
+
+async function confirmAndInvite(item) {
+  if (!item) return;
+  const ss = item._signalState;
+  const sched = ss?.recommendation?.scheduling || ss?.signals?.scheduling;
+  const primary = sched?.primaryProposal || sched?.proposedTimes?.[0];
+
+  if (!primary?.date) {
+    addChat("agent", `No proposed time found for ${item.company}. Use Draft Email instead.`);
+    return;
+  }
+
+  const d = new Date(primary.date);
+  const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  const dateStr = dn[d.getDay()] + ' ' + (d.getMonth()+1) + '/' + d.getDate() + ' at ' + timeStr;
+
+  // Collect attendee emails
+  const attendeeEmails = [];
+  if (item.replyTo?.length) item.replyTo.forEach(e => attendeeEmails.push(e));
+  if (item.prospects?.length) item.prospects.forEach(p => { if (p.email) attendeeEmails.push(p.email); });
+  const uniqueEmails = [...new Set(attendeeEmails)].filter(e => !e.includes('prescientai.com') && !e.includes('prescient.ai'));
+  // Always include Brian
+  uniqueEmails.push('brian@prescientai.com');
+
+  const attendeeList = uniqueEmails.map(e => `<div style="color:#94a3b8;">• ${e}</div>`).join('');
+
+  addChat("agent", `<div style="font-size:11px;">
+    <div style="font-weight:700;color:#10b981;margin-bottom:6px;">✅ Confirm + Invite: ${dateStr}${primary.timezone ? ' ' + primary.timezone : ''}</div>
+    <div style="color:#94a3b8;margin-bottom:4px;">Attendees:</div>
+    ${attendeeList}
+    <div style="margin-top:8px;"><div class="spin" style="display:inline-block;width:14px;height:14px;vertical-align:middle;margin-right:6px;"></div><span style="color:#f59e0b;">Creating calendar event with Zoom...</span></div>
+    <div id="calCreateStatus-${item.id}"></div>
+  </div>`);
+
+  try {
+    // Create calendar event with Zoom
+    const calRes = await apiFetch('/api/calendar-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `${item.company} — Prescient AI Intro`,
+        start: primary.date.toISOString ? primary.date.toISOString() : primary.date,
+        attendees: uniqueEmails.map(e => ({ email: e, name: (item.prospects?.find(p => p.email === e)?.name) || undefined })),
+        description: `Meeting with ${item.company}.\n\nContext: ${item.task || ''}\n\nScheduled via COS Agent.`,
+        timezone: primary.timezone === 'EST' ? 'America/New_York' : primary.timezone === 'CST' ? 'America/Chicago' : primary.timezone === 'PST' ? 'America/Los_Angeles' : 'America/New_York',
+        useZoom: true,
+      }),
+    });
+    const calData = await calRes.json();
+
+    const statusEl = document.getElementById(`calCreateStatus-${item.id}`);
+    if (calData.success) {
+      const confType = calData.conferenceType === 'zoom' ? 'Zoom' : 'Google Meet';
+      if (statusEl) statusEl.innerHTML = `
+        <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);">
+          <div style="font-weight:700;color:#10b981;margin-bottom:4px;">✅ Calendar invite sent!</div>
+          <div style="color:#94a3b8;">Event: <a href="${calData.htmlLink}" target="_blank" style="color:#60a5fa;">${item.company} — Prescient AI Intro</a></div>
+          <div style="color:#94a3b8;">${confType}: <a href="${calData.meetLink}" target="_blank" style="color:#60a5fa;">${calData.meetLink || 'Link in invite'}</a></div>
+          <div style="color:#94a3b8;">Invites sent to ${calData.attendees?.length || uniqueEmails.length} attendees</div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">✏️ Draft Confirmation Email</button>
+          <button class="action-chip chip-hubspot" onclick="showCrmEditor(ACTIONS.find(a=>a.id===${item.id}))">⚡ Log to CRM</button>
+          <button class="action-chip" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="markDone(${item.id})">✓ Done</button>
+        </div>`;
+      addFeedItem('meeting', `<strong style="color:#10b981;">${item.company}</strong> — calendar invite SENT for ${dateStr} with ${confType}`, item.id);
+      // Refresh calendar data
+      loadCalendar();
+    } else {
+      const hint = calData.hint || '';
+      if (statusEl) statusEl.innerHTML = `
+        <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);">
+          <div style="font-weight:700;color:#ef4444;margin-bottom:4px;">⚠️ Calendar event failed</div>
+          <div style="color:#94a3b8;">${calData.error || 'Unknown error'}</div>
+          ${hint ? `<div style="color:#f59e0b;margin-top:4px;font-size:10px;">${hint}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">✏️ Draft Confirmation Instead</button>
+        </div>`;
+      addFeedItem('error', `${item.company} — calendar invite failed: ${calData.error || 'unknown'}`, item.id);
+    }
+  } catch (err) {
+    console.error('[confirmAndInvite] Error:', err);
+    const statusEl = document.getElementById(`calCreateStatus-${item.id}`);
+    if (statusEl) statusEl.innerHTML = `
+      <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);">
+        <div style="font-weight:700;color:#ef4444;">⚠️ ${err.message || 'Network error'}</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">✏️ Draft Confirmation Instead</button>
+      </div>`;
+  }
+}
+
+async function showAltTimesModal(item) {
+  if (!item) return;
+  const ss = item._signalState;
+  const sched = ss?.recommendation?.scheduling || ss?.signals?.scheduling;
+  const alts = sched?.alternatives || [];
+  const primary = sched?.primaryProposal || sched?.proposedTimes?.[0];
+
+  if (!primary?.date) {
+    addChat("agent", `No proposed time found for ${item.company}. Use Draft Email instead.`);
+    return;
+  }
+
+  const dn = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  if (alts.length === 0) {
+    // No alternatives computed — just open draft with conflict context
+    showDraftModal(item);
+    return;
+  }
+
+  const altList = alts.map((d, i) => {
+    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+    return `<div style="padding:4px 0;"><strong>${dn[d.getDay()]} ${d.getMonth()+1}/${d.getDate()}</strong> at ${timeStr}</div>`;
+  }).join('');
+
+  const conflicts = sched?.availability?.conflicts || [];
+  const conflictName = conflicts[0]?.title || 'another meeting';
+  const conflictTime = conflicts[0]?.start ? new Date(conflicts[0].start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase() : '';
+
+  addChat("agent", `<div style="font-size:11px;">
+    <div style="font-weight:700;color:#ef4444;margin-bottom:6px;">⚠️ ${primary.raw || 'Proposed time'} conflicts with "${conflictName}"${conflictTime ? ' at ' + conflictTime : ''}</div>
+    <div style="color:#94a3b8;margin-bottom:6px;">Available alternatives:</div>
+    <div style="margin-bottom:8px;padding:6px 10px;background:rgba(34,211,238,0.06);border:1px solid rgba(34,211,238,0.15);border-radius:6px;">${altList}</div>
+    <div style="display:flex;gap:6px;">
+      <button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">✏️ Draft with Alternatives</button>
+    </div>
+  </div>`);
+}
+
 async function createGmailDraft(itemId, alsoCrm) {
   const to = document.getElementById("draftTo").value.trim();
   const cc = document.getElementById("draftCc").value.trim();
@@ -1711,7 +2524,7 @@ async function createGmailDraft(itemId, alsoCrm) {
   document.getElementById("draftStatus").innerHTML = '<div class="modal-loading"><div class="spin"></div>Creating Gmail draft...</div>';
 
   try {
-    const res = await fetch('/api/draft-email', {
+    const res = await apiFetch('/api/draft-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to, cc: cc || undefined, subject, body }),
@@ -1719,14 +2532,82 @@ async function createGmailDraft(itemId, alsoCrm) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to create draft');
 
-    document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div>`;
-    document.getElementById("modalFooter").innerHTML = `
-      ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open in Gmail</a>` : ''}
-      <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
-
-    addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span>`);
-
     const item = ACTIONS.find(a => a.id === itemId);
+
+    // Check if this action has a proposed time — auto-create calendar invite
+    const ss = item?._signalState;
+    const sched = ss?.recommendation?.scheduling || ss?.signals?.scheduling;
+    let proposedTimeForInvite = sched?.primaryProposal || sched?.proposedTimes?.[0];
+    if (!proposedTimeForInvite && item?.proposedTimes?.length) {
+      proposedTimeForInvite = { raw: item.proposedTimes[0].raw, date: new Date(item.proposedTimes[0].date), timezone: item.proposedTimes[0].timezone };
+    }
+
+    if (proposedTimeForInvite?.date) {
+      // Auto-create calendar invite after draft
+      document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div><div class="modal-loading" style="margin-top:8px;"><div class="spin"></div>Creating calendar invite with Zoom...</div>`;
+
+      addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span><br><span style="color:#f59e0b;">Creating calendar invite...</span>`);
+
+      // Collect attendees
+      const attendeeEmails = [...new Set([...to.split(/[,;]\s*/), ...cc.split(/[,;]\s*/)])].filter(e => e.includes('@'));
+
+      try {
+        const calRes = await apiFetch('/api/calendar-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `${item.company} — Prescient AI Intro`,
+            start: proposedTimeForInvite.date.toISOString ? proposedTimeForInvite.date.toISOString() : proposedTimeForInvite.date,
+            attendees: attendeeEmails.map(e => ({ email: e.trim() })),
+            description: `Meeting with ${item.company}.\n\nContext: ${item.task || ''}\n\nScheduled via COS Agent.`,
+            timezone: proposedTimeForInvite.timezone === 'EST' ? 'America/New_York' : proposedTimeForInvite.timezone === 'CST' ? 'America/Chicago' : proposedTimeForInvite.timezone === 'PST' ? 'America/Los_Angeles' : 'America/New_York',
+            useZoom: true,
+          }),
+        });
+        const calData = await calRes.json();
+
+        if (calData.success) {
+          const confType = calData.conferenceType === 'zoom' ? 'Zoom' : 'Google Meet';
+          document.getElementById("draftStatus").innerHTML = `
+            <div class="modal-success">&#10003; Draft created in Gmail</div>
+            <div class="modal-success" style="margin-top:4px;">&#10003; Calendar invite sent — ${confType}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+              ${calData.meetLink ? `<a href="${calData.meetLink}" target="_blank" style="color:#60a5fa;">${confType} link</a> · ` : ''}
+              <a href="${calData.htmlLink}" target="_blank" style="color:#60a5fa;">View in Calendar</a>
+              · Invites sent to ${calData.attendees?.length || attendeeEmails.length} people
+            </div>`;
+          document.getElementById("modalFooter").innerHTML = `
+            ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
+            <button class="modal-btn-green" onclick="closeModal();markDone(${itemId})">Done</button>`;
+          addFeedItem('meeting', `<strong style="color:#10b981;">${item.company}</strong> — draft + calendar invite SENT for ${proposedTimeForInvite.raw}`, itemId);
+          loadCalendar(); // Refresh
+        } else {
+          document.getElementById("draftStatus").innerHTML = `
+            <div class="modal-success">&#10003; Draft created in Gmail</div>
+            <div class="modal-error" style="margin-top:4px;">Calendar invite failed: ${calData.error || 'unknown'}</div>
+            ${calData.hint ? `<div style="font-size:10px;color:#f59e0b;margin-top:4px;">${calData.hint}</div>` : ''}`;
+          document.getElementById("modalFooter").innerHTML = `
+            ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
+            <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+        }
+      } catch (calErr) {
+        console.error('[createGmailDraft] Calendar invite failed:', calErr);
+        document.getElementById("draftStatus").innerHTML = `
+          <div class="modal-success">&#10003; Draft created in Gmail</div>
+          <div class="modal-error" style="margin-top:4px;">Calendar invite failed: ${calErr.message}</div>`;
+        document.getElementById("modalFooter").innerHTML = `
+          ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
+          <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+      }
+    } else {
+      // No proposed time — normal draft flow
+      document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div>`;
+      document.getElementById("modalFooter").innerHTML = `
+        ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open in Gmail</a>` : ''}
+        <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+      addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span>`);
+    }
+
     if (alsoCrm && item) {
       setTimeout(() => { closeModal(); showCrmWizard(item); }, 500);
     }
@@ -1775,7 +2656,7 @@ async function showPostCallFlow(item) {
 
   // Auto-fetch from Granola API
   try {
-    const res = await fetch('/api/granola', {
+    const res = await apiFetch('/api/granola', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1927,8 +2808,34 @@ let _lastActionContext = { item: null, granolaNote: null, analysis: null };
 function renderActionChips(item, extraContext = {}) {
   _lastActionContext = { item, granolaNote: extraContext.granolaNote || null, analysis: extraContext.analysis || null };
   const chips = [];
+  const ss = item._signalState || extraContext.signalState;
 
-  // For intro emails, lead with a prominent "Schedule + Reply" chip
+  // Signal-state-aware chips: render contextual chips when engine has computed state
+  if (ss?.recommendation?.chips) {
+    const chipTemplates = {
+      'intro_reply': `<button class="action-chip" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:700;" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">🤝 Reply with Calendly</button>`,
+      'prep': `<button class="action-chip chip-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${item.id}))">🧠 Prep</button>`,
+      'crm': `<button class="action-chip chip-hubspot" onclick="showCrmEditor(ACTIONS.find(a=>a.id===${item.id}), _lastActionContext.analysis)">⚡ HubSpot</button>`,
+      'draft': `<button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}), {callAnalysis: _lastActionContext.analysis, granolaBody: _lastActionContext.granolaNote?.summaryText||''})">✏️ Draft Email</button>`,
+      'postcall': `<button class="action-chip chip-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${item.id}))">🎙️ Post-Call</button>`,
+      'draft_calendly': `<button class="action-chip chip-draft" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">📅 Draft + Calendly</button>`,
+      'bump': `<button class="action-chip chip-draft" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">📩 Bump</button>`,
+      'create_lead': `<button class="action-chip chip-hubspot" style="background:rgba(245,158,11,0.15);color:#f59e0b;border-color:rgba(245,158,11,0.3);" onclick="showCrmEditor(ACTIONS.find(a=>a.id===${item.id}))">➕ Create Lead</button>`,
+      'proposal': `<button class="action-chip chip-proposal" onclick="showProposalModal(ACTIONS.find(a=>a.id===${item.id}))">📄 Order Form</button>`,
+      'confirm_invite': `<button class="action-chip" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:700;" onclick="confirmAndInvite(ACTIONS.find(a=>a.id===${item.id}))">✅ Confirm + Send Invite</button>`,
+      'alt_times': `<button class="action-chip chip-draft" style="background:rgba(34,211,238,0.15);color:#22d3ee;border-color:rgba(34,211,238,0.3);" onclick="showAltTimesModal(ACTIONS.find(a=>a.id===${item.id}))">🕐 Suggest Other Times</button>`,
+    };
+    const suppress = ss.recommendation.suppress || [];
+    ss.recommendation.chips.forEach(key => {
+      if (chipTemplates[key] && !suppress.includes(key)) chips.push(chipTemplates[key]);
+    });
+    // Always add overflow chips that aren't suppressed
+    if (!suppress.includes('linkedin')) chips.push(`<button class="action-chip chip-linkedin" onclick="showLinkedInModal(ACTIONS.find(a=>a.id===${item.id}))">💼 LinkedIn</button>`);
+    chips.push(`<button class="action-chip chip-slack" onclick="showSlackMenu(${item.id})">💬 Slack</button>`);
+    return `<div class="action-chips">${chips.join('')}</div>`;
+  }
+
+  // Fallback: existing chip logic (no signal state available)
   if (item.isIntro) {
     chips.push(`<button class="action-chip" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:700;" onclick="showDraftModal(ACTIONS.find(a=>a.id===${item.id}))">🤝 Reply with Calendly</button>`);
   }
@@ -1960,7 +2867,7 @@ async function resolveIntroWorkflow(item) {
   // 2. Search HubSpot for company/deal/contact
   let hubspotMatch = { deals: [], companies: [], contacts: [], hasMatch: false };
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'search_company', query: item.company }),
@@ -2128,7 +3035,7 @@ async function createLeadFromIntro(itemId) {
   }
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2285,7 +3192,7 @@ async function pullEmailThread(company) {
   statusEl.innerHTML = '<div style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:6px;"><div class="spin" style="width:14px;height:14px;"></div>Searching Gmail for ' + company + '...</div>';
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'search_emails', query: company, maxResults: 15 }),
@@ -2360,7 +3267,7 @@ async function submitCrmEditor(itemId) {
         if (competitor) props.hs_lost_to_competitor = competitor;
       }
       if (Object.keys(props).length > 0) {
-        await fetch('/api/crm-update', {
+        await apiFetch('/api/crm-update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'update_deal', dealId: deal.id, properties: props }),
@@ -2373,7 +3280,7 @@ async function submitCrmEditor(itemId) {
 
     // Add note
     if (note) {
-      await fetch('/api/crm-update', {
+      await apiFetch('/api/crm-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'add_note', dealId: deal?.id || undefined, note, companyName: item.company }),
@@ -2384,7 +3291,7 @@ async function submitCrmEditor(itemId) {
     // Create contact if new email provided
     if (contactEmail && contactName) {
       try {
-        await fetch('/api/crm-update', {
+        await apiFetch('/api/crm-update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'create_contact', email: contactEmail, name: contactName, company: item.company }),
@@ -2429,7 +3336,7 @@ async function runPostCallAnalysis(itemId) {
   if (btn) { btn.disabled = true; btn.textContent = "Analyzing..."; }
 
   try {
-    const res = await fetch('/api/post-call', {
+    const res = await apiFetch('/api/post-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2458,7 +3365,7 @@ async function runPostCallProposal() {
   document.getElementById("pcStep2Status").innerHTML = '<span style="color:#f59e0b;">Running...</span>';
 
   try {
-    const res = await fetch('/api/post-call', {
+    const res = await apiFetch('/api/post-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2506,7 +3413,7 @@ async function runPostCallCrm() {
   document.getElementById("pcStep4Status").innerHTML = '<span style="color:#f59e0b;">Running...</span>';
 
   try {
-    const res = await fetch('/api/post-call', {
+    const res = await apiFetch('/api/post-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2537,7 +3444,7 @@ async function runPostCallAll() {
   // LinkedIn
   const s = _postCallState;
   if (s.contactName) {
-    fetch('/api/linkedin', {
+    apiFetch('/api/linkedin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contactName: s.contactName, company: s.item.company, context: s.analysis?.summary || '' }),
@@ -2613,7 +3520,7 @@ async function generateProposal(itemId) {
 
   try {
     // Generate the proposal via AI
-    const res = await fetch('/api/proposal', {
+    const res = await apiFetch('/api/proposal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -2713,7 +3620,7 @@ async function analyzeCrmNotes(itemId) {
   document.getElementById("crmAnalysis").innerHTML = '<div class="modal-loading"><div class="spin"></div>Analyzing call notes...</div>';
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2782,7 +3689,7 @@ async function crmDoUpdateStage(dealId, stageIdOrName, company, stageName) {
   if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Updating HubSpot...</div>';
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'update_stage', dealId, properties: { dealstage: stageId } }),
@@ -2846,7 +3753,7 @@ async function crmDoCreateDeal(company) {
   if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Creating deal...</div>';
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2894,7 +3801,7 @@ async function crmDoAddNote(dealId, company, encodedNote) {
   if (statusEl) statusEl.innerHTML = '<div class="modal-loading"><div class="spin"></div>Saving note...</div>';
 
   try {
-    const res = await fetch('/api/crm-update', {
+    const res = await apiFetch('/api/crm-update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'add_note', dealId: dealId || undefined, note: noteBody, companyName: company }),
@@ -2923,7 +3830,7 @@ async function showLinkedInModal(item) {
     `<div class="modal-loading"><div class="spin"></div>Generating connection message...</div>`, '');
 
   try {
-    const res = await fetch('/api/linkedin', {
+    const res = await apiFetch('/api/linkedin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2974,7 +3881,7 @@ let _slackLoaded = false;
 async function loadSlackTargets() {
   if (_slackLoaded) return;
   try {
-    const res = await fetch('/api/slack');
+    const res = await apiFetch('/api/slack');
     if (!res.ok) return;
     const data = await res.json();
     if (data.channels) SLACK_CHANNELS = data.channels;
@@ -2993,16 +3900,18 @@ function showSlackMenu(id) {
   loadSlackTargets().then(() => {
     const channelOpts = SLACK_CHANNELS.length > 0
       ? SLACK_CHANNELS.map(c => `<button class="slack-opt" onclick="pickSlackTarget('${c.id}','#${c.name}')">#${c.name}</button>`).join("")
-      : ['team-sales','general','random','team-customer-success','team-data-science','team-marketing'].map(n =>
+      : ['general','random','team-customer-success','team-data-science','team-marketing'].map(n =>
           `<button class="slack-opt" onclick="pickSlackTarget('#${n}','#${n}')">#${n}</button>`).join("");
     const personOpts = SLACK_USERS.length > 0
       ? SLACK_USERS.slice(0, 30).map(u => `<button class="slack-opt" onclick="pickSlackTarget('${u.id}','@${u.displayName || u.name}')">@${u.displayName || u.name}</button>`).join("")
       : ['Brian','Will','Jason','Elliot','Ali','Alicia','Nathan'].map(n =>
           `<button class="slack-opt" onclick="pickSlackTarget('@${n}','@${n}')">@${n}</button>`).join("");
 
-    const defaultChannel = SLACK_CHANNELS.find(c => c.name === 'team-sales');
-    const defaultId = defaultChannel ? defaultChannel.id : '#team-sales';
-    const defaultLabel = '#team-sales';
+    const defaultChannel = SLACK_CHANNELS.find(c => c.name === 'team-sales')
+      || SLACK_CHANNELS.find(c => c.name === 'general')
+      || SLACK_CHANNELS[0];
+    const defaultId = defaultChannel ? defaultChannel.id : '#general';
+    const defaultLabel = defaultChannel ? `#${defaultChannel.name}` : '#general';
 
     const area = document.getElementById("contextArea");
     area.innerHTML = `<div class="context-bar" style="padding:14px 16px;">
@@ -3046,9 +3955,15 @@ function showSlackMenu(id) {
 }
 
 function filterSlackPicker(query) {
-  const q = query.toLowerCase();
-  document.querySelectorAll('#slackPickerChannels .slack-opt, #slackPickerUsers .slack-opt').forEach(el => {
-    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  const q = query.toLowerCase().replace(/^[#@]/, '');
+  const isChannelSearch = query.startsWith('#');
+  const isUserSearch = query.startsWith('@');
+
+  document.querySelectorAll('#slackPickerChannels .slack-opt').forEach(el => {
+    el.style.display = (!isUserSearch && el.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+  document.querySelectorAll('#slackPickerUsers .slack-opt').forEach(el => {
+    el.style.display = (!isChannelSearch && el.textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
 }
 
@@ -3094,7 +4009,7 @@ async function sendSlack(id) {
       payload.channel = target;
     }
 
-    const res = await fetch('/api/slack', {
+    const res = await apiFetch('/api/slack', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -3102,9 +4017,10 @@ async function sendSlack(id) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Send failed');
 
-    if (status) status.innerHTML = `<div class="modal-success" style="font-size:12px;">&#10003; Sent to ${label}</div>`;
+    const sentAs = data.sentAs === 'user' ? '' : ' <span style="color:#f59e0b;font-size:10px;">(via COS bot)</span>';
+    if (status) status.innerHTML = `<div class="modal-success" style="font-size:12px;">&#10003; Sent to ${label}${sentAs}</div>`;
     if (btn) { btn.textContent = "Sent ✓"; btn.style.background = "rgba(16,185,129,0.2)"; btn.style.color = "#10b981"; }
-    addChat("agent", `<strong>&#10003; Slack sent</strong> → ${label}<br><span style="color:#64748b;font-size:11px;">${msg.substring(0, 100)}${msg.length > 100 ? '...' : ''}</span>`);
+    addChat("agent", `<strong>&#10003; Slack sent</strong> → ${label}${sentAs}<br><span style="color:#64748b;font-size:11px;">${msg.substring(0, 100)}${msg.length > 100 ? '...' : ''}</span>`);
     setTimeout(() => renderContextBar(), 1500);
   } catch (err) {
     if (status) status.innerHTML = `<div class="modal-error">${err.message}</div>`;
@@ -3159,7 +4075,7 @@ async function buildPrep(item) {
 
   // Fetch AI prep in background
   try {
-    const res = await fetch('/api/prep', {
+    const res = await apiFetch('/api/prep', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3192,7 +4108,7 @@ async function deepPrep(id) {
     `<div class="modal-loading"><div class="spin"></div>Compiling full research brief...</div>`, '');
 
   try {
-    const res = await fetch('/api/prep', {
+    const res = await apiFetch('/api/prep', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3270,7 +4186,7 @@ function sendChat() {
   // Fallback: send to AI for a response
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Thinking...</div>`);
   const thinkingIdx = chatHistory.length - 1;
-  fetch('/api/ai', {
+  apiFetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: text }),
@@ -3784,7 +4700,7 @@ async function fetchGranolaBySearch(keyword) {
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Searching Granola for "${keyword}"...</div>`);
   const searchIdx = chatHistory.length - 1;
   try {
-    const res = await fetch('/api/granola', {
+    const res = await apiFetch('/api/granola', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company: keyword, analyze: false }),
@@ -3823,7 +4739,7 @@ async function runChainedPostCall(item, opts = {}) {
   let granolaNote = null;
   let analysis = null;
   try {
-    const res = await fetch('/api/granola', {
+    const res = await apiFetch('/api/granola', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company: item.company, analyze: true }),
@@ -4345,7 +5261,13 @@ function renderLeadsView(main) {
     const catCfg = CAT_CONFIG[a.cat];
     const introBadge = a.isIntro ? `<span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:1px 6px;border-radius:3px;">🤝 intro</span> ` : '';
     const catBadge = catCfg ? `<span style="font-size:9px;font-weight:600;color:${catCfg.color};background:${catCfg.color}20;padding:1px 6px;border-radius:3px;">${a.cat}</span>` : "";
-    const aiRec = a.aiRec ? `<span class="ai-badge">AI: ${a.aiRec}</span>` : "";
+    let aiRec = "";
+    if (a._signalState?.recommendation?.overridden) {
+      const sc = getStateColor(a._signalState.canonicalState);
+      aiRec = `<span class="ai-badge" style="background:${sc}15;color:${sc};"><span style="font-weight:700;">${formatStateName(a._signalState.canonicalState)}</span> ${a._signalState.recommendation.text}</span>`;
+    } else if (a.aiRec) {
+      aiRec = `<span class="ai-badge">AI: ${a.aiRec}</span>`;
+    }
 
     html += `<div class="item ${isDone?'done-item':''} ${isSel?'selected':''}" onclick="${isDone?'':`selectItem(${a.id})`}">
       <span class="company tag ${a.color}">${a.company}</span>
@@ -4378,15 +5300,41 @@ function renderActionItem(a) {
   const days = daysStale(a.lastActivity);
   const badge = !isDone ? staleBadge(days) : "";
   const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
-  const aiRec = a.aiRec ? `<span class="ai-badge">AI: ${a.aiRec}</span>` : "";
+  // Signal-state-aware recommendation badge
+  let aiRec = "";
+  if (a._signalState?.recommendation?.overridden) {
+    const ss = a._signalState;
+    const sc = getStateColor(ss.canonicalState);
+    aiRec = `<span class="ai-badge" style="background:${sc}15;color:${sc};"><span style="font-weight:700;">${formatStateName(ss.canonicalState)}</span> ${ss.recommendation.text}</span>`;
+  } else if (a.aiRec) {
+    aiRec = `<span class="ai-badge">AI: ${a.aiRec}</span>`;
+  }
 
-  // Determine primary action button — pass id directly, no selectItem re-render
+  // Determine primary action button — signal-state-aware
   let primaryBtn = "";
   let primaryClass = "";
   if (!isDone) {
+    const ss = a._signalState;
     if (a.isIntro) {
-      // Intros get a prominent "Reply with Calendly" button
       primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();runAction('draft',${a.id})" style="background:#10b981;color:#fff;">🤝 Reply</button>`;
+      primaryClass = "green";
+    } else if (ss?.canonicalState === 'MEETING_BOOKED') {
+      primaryBtn = `<button class="action-primary purple" onclick="event.stopPropagation();buildPrep(ACTIONS.find(x=>x.id===${a.id}))">🧠 Prep</button>`;
+      primaryClass = "purple";
+    } else if (ss?.canonicalState === 'MEETING_COMPLETED') {
+      primaryBtn = `<button class="action-primary" style="background:rgba(124,58,237,0.2);color:#c4b5fd;" onclick="event.stopPropagation();showPostCallFlow(ACTIONS.find(x=>x.id===${a.id}))">🎙️ Post-Call</button>`;
+      primaryClass = "purple";
+    } else if (ss?.canonicalState === 'AVAILABLE_TO_BOOK') {
+      primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();confirmAndInvite(ACTIONS.find(x=>x.id===${a.id}))" style="background:#10b981;color:#fff;">✅ Confirm + Invite</button>`;
+      primaryClass = "green";
+    } else if (ss?.canonicalState === 'SCHEDULING_CONFLICT') {
+      primaryBtn = `<button class="action-primary" style="background:rgba(239,68,68,0.2);color:#fca5a5;" onclick="event.stopPropagation();showAltTimesModal(ACTIONS.find(x=>x.id===${a.id}))">🕐 Suggest Times</button>`;
+      primaryClass = "";
+    } else if (ss?.canonicalState === 'SCHEDULING_PROPOSED') {
+      primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();confirmAndInvite(ACTIONS.find(x=>x.id===${a.id}))" style="background:#10b981;color:#fff;">✅ Confirm + Invite</button>`;
+      primaryClass = "green";
+    } else if (ss?.canonicalState === 'SCHEDULING_INTENT') {
+      primaryBtn = `<button class="action-primary green" onclick="event.stopPropagation();runAction('draft',${a.id})">📅 Send Calendly</button>`;
       primaryClass = "green";
     } else if (a.draftPrompt && a.crmPrompt) {
       primaryBtn = `<button class="action-primary" onclick="event.stopPropagation();runAction('draft',${a.id})">✏️ Draft</button>`;
@@ -4459,8 +5407,15 @@ function toggleDropdown(btn) {
 // INIT
 // ═══════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
+  // Check for API key
+  if (!_cosApiKey) {
+    showApiKeyPrompt();
+    return; // Don't load data until key is provided
+  }
+
   // Load data from API first
   await loadData();
+  runSignalEngine(); // Compute initial signal states
   updateSyncIndicator();
   syncInBackground(); // Initial sync
   startAutoSync(); // Auto-sync every 3 minutes
@@ -4708,7 +5663,7 @@ async function runChatPricing(parsed) {
   addChat("agent", `<div class="modal-loading" style="padding:0;"><div class="spin"></div>Calculating pricing for <strong>${parsed.brandName}</strong> — ${spendStr} across ${channelsStr}...</div>`);
   const thinkingIdx = chatHistory.length - 1;
   try {
-    const res = await fetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed) });
+    const res = await apiFetch('/api/pricing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed) });
     const data = await res.json();
     if (!res.ok || !data.success) { chatHistory[thinkingIdx].text = `<div style="color:#ef4444;">${data.error || 'Calculation failed'}</div>`; refreshChat(); return; }
     const p = data.pricing, a = data.approval;
@@ -4752,7 +5707,7 @@ async function pricingChatGenerateProposal() {
   if (!resultDiv) return;
   resultDiv.innerHTML = '<div style="font-size:11px;color:#64748b;margin-top:6px;">Generating order form...</div>';
   try {
-    const res = await fetch('/api/proposal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: _lastPricingInput.brandName, pricing: _lastPricingInput }) });
+    const res = await apiFetch('/api/proposal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company: _lastPricingInput.brandName, pricing: _lastPricingInput }) });
     const data = await res.json();
     if (data.success) {
       resultDiv.innerHTML = `<div style="background:#111827;border:1px solid #1e293b;border-radius:6px;padding:10px;margin-top:6px;"><div style="font-size:10px;color:#10b981;font-weight:600;margin-bottom:4px;">Order Form${data.slack?.posted ? ' — Posted to Slack' : ''}</div><pre style="font-size:10px;color:#94a3b8;white-space:pre-wrap;max-height:200px;overflow:auto;font-family:monospace;">${(data.orderForm||'').replace(/</g,'&lt;')}</pre></div>`;
@@ -4890,7 +5845,7 @@ async function runPricingCalc() {
   resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">Calculating...</div>';
 
   try {
-    const res = await fetch('/api/pricing', {
+    const res = await apiFetch('/api/pricing', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -4997,7 +5952,7 @@ async function pricingGenerateProposal() {
   const resultDiv = document.getElementById('pProposalResult');
   resultDiv.innerHTML = '<div style="font-size:12px;color:#64748b;">Generating order form...</div>';
   try {
-    const res = await fetch('/api/proposal', {
+    const res = await apiFetch('/api/proposal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company: _lastPricingInput.brandName, pricing: _lastPricingInput }),

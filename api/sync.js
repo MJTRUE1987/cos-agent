@@ -2,11 +2,20 @@
 // Pulls fresh data from Gmail, HubSpot, and Granola
 // Merges into existing data and persists to KV
 
+import { acquireLock, releaseLock } from './lib/kv-lock.js';
+
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 const GRANOLA_BASE = 'https://public-api.granola.ai';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { lastSyncedAt } = req.body || {};
@@ -47,30 +56,39 @@ export default async function handler(req, res) {
     summary.errors.push('Granola: ' + (granolaResult.reason?.message || 'failed'));
   }
 
-  // Persist to KV if available
+  // Persist to KV if available (with distributed lock to prevent race conditions)
   try {
     const kvModule = await import('@vercel/kv');
     const kv = kvModule.kv;
 
-    if (newActions.length > 0) {
-      const existing = (await kv.get('actions')) || [];
-      const merged = upsertById(existing, newActions);
-      await kv.set('actions', merged);
+    const lockId = await acquireLock(kv);
+    if (!lockId) {
+      return res.status(409).json({ error: 'Sync already in progress, try again shortly' });
     }
-    if (updatedPipeline.length > 0) {
-      const existing = (await kv.get('pipeline')) || [];
-      const merged = upsertById(existing, updatedPipeline);
-      await kv.set('pipeline', merged);
+
+    try {
+      if (newActions.length > 0) {
+        const existing = (await kv.get('actions')) || [];
+        const merged = upsertById(existing, newActions);
+        await kv.set('actions', merged);
+      }
+      if (updatedPipeline.length > 0) {
+        const existing = (await kv.get('pipeline')) || [];
+        const merged = upsertById(existing, updatedPipeline);
+        await kv.set('pipeline', merged);
+      }
+      if (newMeetings.length > 0) {
+        const existing = (await kv.get('meetings')) || [];
+        const merged = upsertByTitle(existing, newMeetings);
+        await kv.set('meetings', merged);
+      }
+      // Store sync timestamp
+      const meta = (await kv.get('metadata')) || {};
+      meta.lastSyncedAt = syncStart.toISOString();
+      await kv.set('metadata', meta);
+    } finally {
+      await releaseLock(kv, lockId);
     }
-    if (newMeetings.length > 0) {
-      const existing = (await kv.get('meetings')) || [];
-      const merged = upsertByTitle(existing, newMeetings);
-      await kv.set('meetings', merged);
-    }
-    // Store sync timestamp
-    const meta = (await kv.get('metadata')) || {};
-    meta.lastSyncedAt = syncStart.toISOString();
-    await kv.set('metadata', meta);
   } catch {
     // KV not configured — data returned to frontend for local merge
   }
@@ -116,7 +134,7 @@ async function syncGmail(sinceDate, summary) {
 
   // Get recent unread inbox messages
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`is:inbox is:unread after:${sinceEpoch}`)}&maxResults=10`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`is:inbox after:${sinceEpoch}`)}&maxResults=10`,
     { headers }
   );
   if (!listRes.ok) return [];
@@ -192,9 +210,17 @@ async function syncGmail(sinceDate, summary) {
     "category": "inbound|sales|partnerships|strategic",
     "urgency": "high|medium|low",
     "draftPrompt": "Brief instruction for drafting a reply",
-    "crmPrompt": "Brief instruction for CRM logging"
+    "crmPrompt": "Brief instruction for CRM logging",
+    "proposedTimes": [{"raw": "exact text like 'March 12th at 3pm EST'", "date": "ISO 8601 datetime", "timezone": "EST/CST/PST/etc"}]
   }
 ]
+
+SCHEDULING TIME EXTRACTION — if the email proposes a specific meeting time:
+- Extract ALL proposed date/times into the "proposedTimes" array
+- Include the exact raw text, ISO 8601 date with timezone offset, and timezone abbreviation
+- Examples: "Can you do March 12th at 3pm EST?" → {"raw": "March 12th at 3pm EST", "date": "2026-03-12T15:00:00-05:00", "timezone": "EST"}
+- If no specific time is proposed, set proposedTimes to []
+- Also detect: "How about Tuesday at 2pm?", "Let's do 3/15 at 10am PST", "I'm free Wednesday afternoon"
 
 INTRO EMAIL DETECTION — mark isIntro=true if ANY of these apply:
 - Subject contains "intro", "introduction", "meet", "connect", "introducing"
@@ -275,9 +301,14 @@ Return ONLY valid JSON array.`,
       prospects: p.prospects || [],
       replyTo: externalEmails,
       threadId: email.id,
+      // Scheduling data from AI classification
+      proposedTimes: p.proposedTimes || [],
+      latestReply: email.snippet || '',
+      latestReplyFrom: email.from.replace(/<[^>]*>/g, '').trim(),
+      latestReplyDate: email.date,
     };
 
-    console.log(`[sync:gmail] ${p.isIntro ? 'INTRO' : 'email'} classified: company=${p.company}, urgency=${p.urgency}, cat=${p.category}, isIntro=${!!p.isIntro}`);
+    console.log(`[sync:gmail] ${p.isIntro ? 'INTRO' : 'email'} classified: company=${p.company}, urgency=${p.urgency}, cat=${p.category}, isIntro=${!!p.isIntro}${p.proposedTimes?.length ? ', proposedTimes=' + p.proposedTimes.length : ''}`);
 
     newActions.push(action);
     summary.emailsProcessed++;
