@@ -15,6 +15,29 @@ try {
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
+  // POST with action=reseed forces KV to reload from seed-data.json
+  if (req.method === 'POST') {
+    const { action } = req.body || {};
+    if (action === 'reseed' && kv) {
+      await Promise.all([
+        kv.set('actions', seedData.actions),
+        kv.set('meetings', seedData.meetings),
+        kv.set('pipeline', seedData.pipeline),
+        seedData.metadata ? kv.set('metadata', seedData.metadata) : Promise.resolve(),
+      ]);
+      console.log('[data] KV reseeded from seed-data.json');
+      return res.status(200).json({ success: true, message: 'KV reseeded', actionCount: seedData.actions?.length });
+    }
+    return res.status(400).json({ error: 'Unknown action' });
+  }
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
@@ -23,22 +46,31 @@ export default async function handler(req, res) {
         kv.get('actions'), kv.get('meetings'), kv.get('pipeline'), kv.get('metadata'),
       ]);
 
-      if (actions && meetings && pipeline) {
-        return res.status(200).json({ actions, meetings, pipeline, metadata: metadata || {} });
+      // Use KV data per-key, falling back to seed data for any missing keys
+      if (!actions) console.warn('[data] KV actions missing, using seed data');
+      if (!meetings) console.warn('[data] KV meetings missing, using seed data');
+      if (!pipeline) console.warn('[data] KV pipeline missing, using seed data');
+
+      const result = {
+        actions: actions || seedData.actions || [],
+        meetings: meetings || seedData.meetings || [],
+        pipeline: pipeline || seedData.pipeline || [],
+        metadata: metadata || {},
+      };
+
+      // Auto-seed any missing KV keys from seed data
+      const toSeed = [];
+      if (!actions && seedData.actions) toSeed.push(kv.set('actions', seedData.actions));
+      if (!meetings && seedData.meetings) toSeed.push(kv.set('meetings', seedData.meetings));
+      if (!pipeline && seedData.pipeline) toSeed.push(kv.set('pipeline', seedData.pipeline));
+      if (toSeed.length > 0) {
+        Promise.all(toSeed).catch(err => console.error('[data] KV seed error:', err));
       }
 
-      // Auto-seed KV from seed data on first request
-      if (seedData.actions) {
-        Promise.all([
-          kv.set('actions', seedData.actions),
-          kv.set('meetings', seedData.meetings),
-          kv.set('pipeline', seedData.pipeline),
-          seedData.metadata ? kv.set('metadata', seedData.metadata) : Promise.resolve(),
-        ]).catch(err => console.error('KV seed error:', err));
-      }
+      return res.status(200).json(result);
     }
 
-    // Return seed data (with or without KV)
+    // Return seed data (KV not configured)
     return res.status(200).json({
       actions: seedData.actions || [],
       meetings: seedData.meetings || [],

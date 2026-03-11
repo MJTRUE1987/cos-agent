@@ -4,6 +4,13 @@
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { actions = [], meetings = [], pipeline = [], calendarEvents = [], diff = null, dealIntelligence = null } = req.body || {};
@@ -18,7 +25,10 @@ export default async function handler(req, res) {
 
   // Build context
   const openActions = actions.filter(a => a.status === 'open');
-  const doneActions = actions.filter(a => a.status === 'done');
+  const weekAgoStr = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+  const allDone = actions.filter(a => a.status === 'done');
+  const doneActions = allDone.filter(a => a.lastActivity && a.lastActivity >= weekAgoStr);
+  const doneForPrompt = doneActions.length > 0 ? doneActions : allDone;
 
   const actionsContext = openActions.map(a => {
     const days = a.lastActivity ? Math.floor((today - new Date(a.lastActivity)) / 86400000) : '?';
@@ -142,10 +152,11 @@ Return ONLY valid JSON.`,
         messages: [{
           role: 'user',
           content: `TODAY: ${todayStr} (${weekStr})\n\n` +
-            `COMPLETED THIS WEEK (${doneActions.length}):\n${doneActions.map(a => `  ✓ ${a.company} — ${(a.task || '').substring(0, 60)}`).join('\n') || 'None'}\n\n` +
+            `COMPLETED THIS WEEK (${doneForPrompt.length}):\n${doneForPrompt.map(a => `  ✓ ${a.company} — ${(a.task || '').substring(0, 60)}`).join('\n') || 'None'}\n\n` +
             `STILL OPEN (${openActions.length}):\n${actionsContext}\n\n` +
             `WEEKLY PIPELINE DIFF:\n${diffContext}\n\n` +
             `PIPELINE (${pipeline.length} deals):\n${pipelineContext}\n\n` +
+            `CALENDAR EVENTS:\n${(calendarEvents || []).slice(0, 15).map(e => `${e.date || e.start || ''} | ${e.title || e.summary || ''} | ${(e.attendees || e.people || '').toString().substring(0, 100)}${e.isExternal ? ' [EXTERNAL]' : ''}`).join('\n') || 'No calendar events'}\n\n` +
             `DEAL INTELLIGENCE:\n${intelligenceContext}`,
         }],
       }),

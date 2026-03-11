@@ -5,6 +5,13 @@ const HUBSPOT_BASE = 'https://api.hubapi.com';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
@@ -163,18 +170,24 @@ export default async function handler(req, res) {
       }
 
       case 'create_contact': {
-        if (!contactEmail) {
-          return res.status(400).json({ error: 'contactEmail required' });
+        // Accept both { contactEmail, contactProperties } and { email, name, company } from frontend
+        const cEmail = contactEmail || req.body.email;
+        if (!cEmail) {
+          return res.status(400).json({ error: 'contactEmail or email required' });
         }
+        const contactProps = { email: cEmail };
+        if (contactProperties) Object.assign(contactProps, contactProperties);
+        // Map frontend field names
+        if (req.body.name) {
+          const nameParts = req.body.name.trim().split(/\s+/);
+          contactProps.firstname = nameParts[0] || '';
+          contactProps.lastname = nameParts.slice(1).join(' ') || '';
+        }
+        if (req.body.company) contactProps.company = req.body.company;
         const r = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/contacts`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            properties: {
-              email: contactEmail,
-              ...contactProperties,
-            },
-          }),
+          body: JSON.stringify({ properties: contactProps }),
         });
         result = await r.json();
         break;

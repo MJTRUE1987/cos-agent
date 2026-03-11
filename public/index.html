@@ -806,8 +806,11 @@ function _resolveCanonicalState(signals, log, company) {
   const { email, calendar, meeting, crm, scheduling } = signals;
   if (crm?.isClosedWon) return _logSignalState('CLOSED_WON', company, log);
   if (crm?.isClosedLost) return _logSignalState('CLOSED_LOST', company, log);
-  if (meeting?.isPast && meeting.hasGranola) return _logSignalState('MEETING_COMPLETED', company, log);
-  if (calendar?.isPast) return _logSignalState('MEETING_COMPLETED', company, log);
+  // MEETING_COMPLETED only within 72h — after that, fall through to email signals
+  const meetingAge = meeting?.isPast && meeting.matchedMeeting?.date ? _signalDaysBetween(meeting.matchedMeeting.date, new Date()) : 999;
+  const calendarAge = calendar?.isPast && calendar.matchedEvent?.start ? _signalDaysBetween(calendar.matchedEvent.start, new Date()) : 999;
+  if (meeting?.isPast && meeting.hasGranola && meetingAge <= 3) return _logSignalState('MEETING_COMPLETED', company, log);
+  if (calendar?.isPast && calendarAge <= 3) return _logSignalState('MEETING_COMPLETED', company, log);
   if (calendar?.isUpcoming) return _logSignalState('MEETING_BOOKED', company, log);
   if (meeting?.isUpcoming) return _logSignalState('MEETING_BOOKED', company, log);
   // Scheduling sub-states
@@ -982,7 +985,10 @@ let _lastMentionedCompany = null;
 // ═══════════════════════════════════════
 // LIVE DATA SYNC (Feature 3)
 // ═══════════════════════════════════════
+let _syncing = false;
 async function syncInBackground() {
+  if (_syncing) return;
+  _syncing = true;
   const indicator = document.getElementById("syncIndicator");
   if (indicator) indicator.innerHTML = '<span style="color:#f59e0b;">Syncing...</span>';
 
@@ -1084,6 +1090,8 @@ async function syncInBackground() {
     console.error('Sync error:', err);
     if (indicator) indicator.innerHTML = '<span style="color:#ef4444;">Sync failed</span>';
     addFeedItem('error', 'Sync failed — ' + (err.message || 'unknown error'), null);
+  } finally {
+    _syncing = false;
   }
 }
 
@@ -1203,6 +1211,18 @@ function emitSignalFeedItems(results) {
         break;
       case 'FOLLOW_UP_REQUIRED':
         addFeedItem('signal', `<strong style="color:#f59e0b;">${action.company}</strong> — follow-up needed (${state.signals?.email?.daysSinceActivity || '?'}d stale)`, id);
+        break;
+      case 'REPLIED':
+        addFeedItem('reply', `<strong style="color:#60a5fa;">${action.company}</strong> — prospect replied`, id);
+        break;
+      case 'CLOSED_WON':
+        addFeedItem('deal', `<strong style="color:#10b981;">${action.company}</strong> — CLOSED WON!`, id);
+        break;
+      case 'CLOSED_LOST':
+        addFeedItem('deal', `<strong style="color:#ef4444;">${action.company}</strong> — deal lost`, id);
+        break;
+      case 'PROPOSAL_ACTIVE':
+        addFeedItem('deal', `<strong style="color:#f59e0b;">${action.company}</strong> — proposal active`, id);
         break;
     }
   }
@@ -1881,10 +1901,13 @@ function getSelected() { return ACTIONS.find(a => a.id === selectedId); }
 
 function daysStale(lastActivity) {
   if (!lastActivity) return 0;
-  return Math.floor((TODAY - new Date(lastActivity)) / 86400000);
+  return Math.floor((new Date() - new Date(lastActivity)) / 86400000);
 }
 
-function staleBadge(days) {
+function staleBadge(days, action) {
+  // Suppress urgency badges for items that are progressing normally
+  const cs = action?._signalState?.canonicalState;
+  if (cs === 'MEETING_BOOKED' || cs === 'ALREADY_SCHEDULED' || cs === 'CLOSED_WON' || cs === 'MEETING_COMPLETED') return '';
   if (days >= 5) return `<span class="badge-overdue">${days}d overdue</span>`;
   if (days >= 3) return `<span class="badge-stale">${days}d ago</span>`;
   return `<span class="badge-fresh">${days}d ago</span>`;
@@ -2029,7 +2052,8 @@ function markDone(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "done"; a.color = "tg";
-  _briefingCache = null;
+  _briefingCache = null; _endOfDayCache = null; _endOfWeekCache = null; _intelligenceCache = null;
+  runSignalEngine();
   updateProgressBadge();
   addChat("agent", `<span style="color:#10b981;font-weight:600;">✓ ${a.company} — done.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
@@ -2050,7 +2074,8 @@ function archiveItem(id) {
   const a = ACTIONS.find(x => x.id === id);
   if (!a) return;
   a.status = "archived";
-  _briefingCache = null;
+  _briefingCache = null; _endOfDayCache = null; _endOfWeekCache = null; _intelligenceCache = null;
+  runSignalEngine();
   updateProgressBadge();
   addChat("agent", `<span style="color:#64748b;">✕ ${a.company} — archived.</span> ${getOpen().length} remaining.`);
   setTimeout(() => advanceToNext(), 300);
@@ -2059,6 +2084,36 @@ function archiveItem(id) {
 // ═══════════════════════════════════════
 // CONTEXT BAR
 // ═══════════════════════════════════════
+function _buildContextButtons(sel) {
+  const allButtons = {
+    postcall:       `<button class="ctx-big-btn ctx-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🎙️</span> Post-Call</button>`,
+    draft:          `<button class="ctx-big-btn ctx-draft" onclick="runAction('draft',${sel.id})"><span class="icon">✏️</span> Draft Email</button>`,
+    prep:           `<button class="ctx-big-btn ctx-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🧠</span> Prep</button>`,
+    crm:            `<button class="ctx-big-btn ctx-crm" onclick="runAction('hubspot',${sel.id})"><span class="icon">⚡</span> CRM</button>`,
+    linkedin:       `<button class="ctx-big-btn ctx-li" onclick="runAction('linkedin',${sel.id})"><span class="icon">💼</span> LinkedIn</button>`,
+    proposal:       `<button class="ctx-big-btn" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="runAction('proposal',${sel.id})"><span class="icon">📄</span> Proposal</button>`,
+    slack:          `<button class="ctx-big-btn ctx-slack-btn" onclick="showSlackMenu(${sel.id})"><span class="icon">💬</span> Slack</button>`,
+    confirm_invite: `<button class="ctx-big-btn" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="confirmAndInvite(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">📅</span> Confirm + Invite</button>`,
+    alt_times:      `<button class="ctx-big-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);" onclick="runAction('draft',${sel.id})"><span class="icon">🔄</span> Suggest Alternatives</button>`,
+    bump:           `<button class="ctx-big-btn ctx-draft" onclick="runAction('draft',${sel.id})"><span class="icon">📩</span> Send Bump</button>`,
+    intro_reply:    `<button class="ctx-big-btn" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="runAction('draft',${sel.id})"><span class="icon">🤝</span> Reply to Intro</button>`,
+    create_lead:    `<button class="ctx-big-btn ctx-crm" onclick="runAction('hubspot',${sel.id})"><span class="icon">➕</span> Create Lead</button>`,
+    draft_calendly: `<button class="ctx-big-btn ctx-draft" onclick="runAction('draft',${sel.id})"><span class="icon">📅</span> Send Calendly</button>`,
+  };
+  const ss = sel._signalState;
+  if (ss?.recommendation?.chips) {
+    const chips = ss.recommendation.chips;
+    const suppress = ss.recommendation.suppress || [];
+    // Show chips from signal engine, always add crm and slack
+    let btns = chips.map(c => allButtons[c]).filter(Boolean);
+    if (!chips.includes('crm') && !suppress.includes('crm')) btns.push(allButtons.crm);
+    if (!chips.includes('slack') && !suppress.includes('slack')) btns.push(allButtons.slack);
+    return btns.join('');
+  }
+  // Fallback: show all standard buttons
+  return [allButtons.postcall, allButtons.draft, allButtons.prep, allButtons.crm, allButtons.linkedin, allButtons.proposal, allButtons.slack].join('');
+}
+
 function renderContextBar() {
   const area = document.getElementById("contextArea");
   const sel = getSelected();
@@ -2079,13 +2134,7 @@ function renderContextBar() {
         <div class="ctx-company-name">${sel.company}${dv}</div>
       </div>
       <div class="ctx-quick-actions">
-        <button class="ctx-big-btn ctx-postcall" onclick="showPostCallFlow(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🎙️</span> Post-Call Pipeline</button>
-        <button class="ctx-big-btn ctx-draft" onclick="runAction('draft',${sel.id})"><span class="icon">✏️</span> Draft Email</button>
-        <button class="ctx-big-btn ctx-prep" onclick="buildPrep(ACTIONS.find(a=>a.id===${sel.id}))"><span class="icon">🧠</span> Prep</button>
-        <button class="ctx-big-btn ctx-crm" onclick="runAction('hubspot',${sel.id})"><span class="icon">⚡</span> CRM</button>
-        <button class="ctx-big-btn ctx-li" onclick="runAction('linkedin',${sel.id})"><span class="icon">💼</span> LinkedIn</button>
-        <button class="ctx-big-btn" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);" onclick="runAction('proposal',${sel.id})"><span class="icon">📄</span> Proposal</button>
-        <button class="ctx-big-btn ctx-slack-btn" onclick="showSlackMenu(${sel.id})"><span class="icon">💬</span> Slack</button>
+        ${_buildContextButtons(sel)}
       </div>
       <div class="ctx-bottom-row">
         <button class="ctx-status-btn ctx-done" onclick="markDone(${sel.id})">✓ Done</button>
@@ -2446,8 +2495,9 @@ async function confirmAndInvite(item) {
           <button class="action-chip" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="markDone(${item.id})">✓ Done</button>
         </div>`;
       addFeedItem('meeting', `<strong style="color:#10b981;">${item.company}</strong> — calendar invite SENT for ${dateStr} with ${confType}`, item.id);
-      // Refresh calendar data
+      // Refresh calendar data + signal engine
       loadCalendar();
+      runSignalEngine();
     } else {
       const hint = calData.hint || '';
       if (statusEl) statusEl.innerHTML = `
@@ -3703,7 +3753,7 @@ async function crmDoUpdateStage(dealId, stageIdOrName, company, stageName) {
     // Update local pipeline data
     _intelligenceCache = null;
     const deal = PIPELINE.find(d => String(d.id) === String(dealId));
-    if (deal) { deal.stage = stageName || stageId; renderCurrentTab(); }
+    if (deal) { deal.stage = stageName || stageId; runSignalEngine(); renderCurrentTab(); }
   } catch (err) {
     if (statusEl) statusEl.innerHTML = `<div class="modal-error">${err.message}</div>`;
   }
@@ -4021,6 +4071,7 @@ async function sendSlack(id) {
     if (status) status.innerHTML = `<div class="modal-success" style="font-size:12px;">&#10003; Sent to ${label}${sentAs}</div>`;
     if (btn) { btn.textContent = "Sent ✓"; btn.style.background = "rgba(16,185,129,0.2)"; btn.style.color = "#10b981"; }
     addChat("agent", `<strong>&#10003; Slack sent</strong> → ${label}${sentAs}<br><span style="color:#64748b;font-size:11px;">${msg.substring(0, 100)}${msg.length > 100 ? '...' : ''}</span>`);
+    runSignalEngine();
     setTimeout(() => renderContextBar(), 1500);
   } catch (err) {
     if (status) status.innerHTML = `<div class="modal-error">${err.message}</div>`;
@@ -5256,7 +5307,7 @@ function renderLeadsView(main) {
     const isDone = a.status === "done";
     const isSel = a.id === selectedId;
     const days = daysStale(a.lastActivity);
-    const badge = !isDone ? staleBadge(days) : "";
+    const badge = !isDone ? staleBadge(days, a) : "";
     const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
     const catCfg = CAT_CONFIG[a.cat];
     const introBadge = a.isIntro ? `<span style="font-size:9px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:1px 6px;border-radius:3px;">🤝 intro</span> ` : '';
@@ -5298,7 +5349,7 @@ function renderActionItem(a) {
   const isDone = a.status === "done";
   const isSel = a.id === selectedId;
   const days = daysStale(a.lastActivity);
-  const badge = !isDone ? staleBadge(days) : "";
+  const badge = !isDone ? staleBadge(days, a) : "";
   const dv = a.dealValue ? `<span class="deal-val">${fmtMoney(a.dealValue)}</span>` : "";
   // Signal-state-aware recommendation badge
   let aiRec = "";

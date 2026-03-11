@@ -4,6 +4,13 @@
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { actions = [], meetings = [], pipeline = [], calendarEvents = [], dealIntelligence = null } = req.body || {};
@@ -33,6 +40,10 @@ export default async function handler(req, res) {
       return `${d.name} — ${d.stage} | $${((d.amount || 0) / 1000).toFixed(0)}K | ${d.owner || 'unassigned'} | close: ${closeStr}`;
     })
     .join('\n');
+
+  const calendarContext = (calendarEvents || []).slice(0, 15).map(e =>
+    `${e.date || e.start || ''} | ${e.title || e.summary || ''} | ${(e.attendees || e.people || '').toString().substring(0, 100)}${e.isExternal ? ' [EXTERNAL]' : ' [internal]'}`
+  ).join('\n');
 
   const intelligenceContext = dealIntelligence
     ? `Pipeline Health: ${dealIntelligence.pipelineHealth?.score || '?'}/100\nAlerts:\n${(dealIntelligence.alerts || []).map(a => `- [${a.severity}] ${a.company || a.stage || 'General'}: ${a.recommendation}`).join('\n')}`
@@ -97,6 +108,7 @@ Return ONLY valid JSON.`,
             `OPEN ACTIONS (${openActions.length}):\n${actionsContext}\n\n` +
             `MEETINGS:\n${meetingsContext}\n\n` +
             `PIPELINE:\n${pipelineContext}\n\n` +
+            `CALENDAR EVENTS:\n${calendarContext || 'No calendar events loaded'}\n\n` +
             `DEAL INTELLIGENCE:\n${intelligenceContext}`,
         }],
       }),

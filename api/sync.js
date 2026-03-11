@@ -89,8 +89,9 @@ export default async function handler(req, res) {
     } finally {
       await releaseLock(kv, lockId);
     }
-  } catch {
-    // KV not configured — data returned to frontend for local merge
+  } catch (kvErr) {
+    console.error('[sync] KV persistence failed:', kvErr.message || kvErr);
+    // Data still returned to frontend for local merge
   }
 
   return res.status(200).json({
@@ -127,17 +128,23 @@ async function syncGmail(sinceDate, summary) {
     }),
   });
   const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) return [];
+  if (!tokenData.access_token) {
+    console.error('[sync:gmail] Token refresh failed:', JSON.stringify(tokenData).substring(0, 200));
+    return [];
+  }
 
   const headers = { Authorization: `Bearer ${tokenData.access_token}` };
   const sinceEpoch = Math.floor(sinceDate.getTime() / 1000);
 
-  // Get recent unread inbox messages
+  // Get recent inbox messages (including read)
   const listRes = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`is:inbox after:${sinceEpoch}`)}&maxResults=10`,
     { headers }
   );
-  if (!listRes.ok) return [];
+  if (!listRes.ok) {
+    console.error('[sync:gmail] Message list failed:', listRes.status, listRes.statusText);
+    return [];
+  }
   const listData = await listRes.json();
   const messages = listData.messages || [];
   if (messages.length === 0) return [];
@@ -246,7 +253,8 @@ Return ONLY valid JSON array.`,
   let parsed;
   try {
     parsed = JSON.parse((aiData.content?.[0]?.text || '[]').replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim());
-  } catch {
+  } catch (parseErr) {
+    console.error('[sync:gmail] AI classification parse failed:', parseErr.message, 'Raw:', aiData.content?.[0]?.text?.substring(0, 200));
     return [];
   }
 
@@ -443,9 +451,8 @@ function upsertByTitle(existing, incoming) {
   const map = new Map(existing.map(m => [(m.date + '|' + m.title).toLowerCase(), m]));
   for (const m of incoming) {
     const key = (m.date + '|' + m.title).toLowerCase();
-    if (!map.has(key)) {
-      map.set(key, m);
-    }
+    const existing = map.get(key);
+    map.set(key, existing ? { ...existing, ...m } : m);
   }
   return Array.from(map.values());
 }

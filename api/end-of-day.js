@@ -4,6 +4,13 @@
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { actions = [], meetings = [], pipeline = [], calendarEvents = [], diff = null, dealIntelligence = null } = req.body || {};
@@ -16,7 +23,11 @@ export default async function handler(req, res) {
 
   // Build context
   const openActions = actions.filter(a => a.status === 'open');
-  const doneActions = actions.filter(a => a.status === 'done');
+  const todayDate = today.toISOString().split('T')[0];
+  const allDone = actions.filter(a => a.status === 'done');
+  const doneActions = allDone.filter(a => a.lastActivity && a.lastActivity.startsWith(todayDate));
+  // Fallback to all done if no date-filtered results (completedAt not tracked)
+  const doneForPrompt = doneActions.length > 0 ? doneActions : allDone;
   const archivedActions = actions.filter(a => a.status === 'archived');
 
   const actionsContext = openActions.map(a => {
@@ -24,9 +35,9 @@ export default async function handler(req, res) {
     return `[id:${a.id}] ${a.company} (${a.cat}) — ${(a.task || '').substring(0, 100)} | ${days}d stale | ${a.dealValue ? '$' + (a.dealValue / 1000) + 'K' : 'no value'}`;
   }).join('\n');
 
-  const completedContext = doneActions.map(a =>
+  const completedContext = doneForPrompt.map(a =>
     `[id:${a.id}] ${a.company} — ${(a.task || '').substring(0, 80)}`
-  ).join('\n');
+  ).join('\n') + (doneActions.length === 0 && allDone.length > 0 ? '\n(Note: done items may include items completed on previous days — completedAt timestamps not tracked)' : '');
 
   const pipelineContext = pipeline
     .filter(d => d.stage !== 'Nurture' && d.stage !== 'Booking')
@@ -60,6 +71,10 @@ export default async function handler(req, res) {
     .filter(m => m.status === 'open' || m.upcoming)
     .map(m => `${m.date} — ${m.title} (${m.people}) | ${m.action || 'no action'} | ${m.upcoming ? 'UPCOMING' : 'needs follow-up'}`)
     .join('\n');
+
+  const calendarContext = (calendarEvents || []).slice(0, 15).map(e =>
+    `${e.date || e.start || ''} | ${e.title || e.summary || ''} | ${(e.attendees || e.people || '').toString().substring(0, 100)}${e.isExternal ? ' [EXTERNAL]' : ' [internal]'}`
+  ).join('\n');
 
   try {
     const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -142,6 +157,7 @@ Return ONLY valid JSON.`,
             `PIPELINE DIFF:\n${diffContext}\n\n` +
             `PIPELINE (${pipeline.length} deals):\n${pipelineContext}\n\n` +
             `MEETINGS:\n${meetingsContext || 'None'}\n\n` +
+            `CALENDAR EVENTS:\n${calendarContext || 'No calendar events loaded'}\n\n` +
             `DEAL INTELLIGENCE:\n${intelligenceContext}\n\n` +
             `ARCHIVED TODAY: ${archivedActions.length}`,
         }],

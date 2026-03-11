@@ -3,8 +3,21 @@
 
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 
+const STAGE_MAP = {
+  '93124525': 'Disco Booked', '998751160': 'Disco Complete', 'appointmentscheduled': 'Demo Scheduled',
+  '123162712': 'Demo Completed', 'decisionmakerboughtin': 'Negotiating', '227588384': 'Committed',
+  'closedwon': 'Closed Won', 'closedlost': 'Closed Lost', '60237411': 'Nurture', '53401375': 'Booking',
+};
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { company, contactName, contactEmail, hubspotDealId, hubspotCompanyId } = req.body || {};
@@ -35,7 +48,7 @@ export default async function handler(req, res) {
         fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/${hubspotDealId}?properties=dealname,dealstage,amount,closedate,hubspot_owner_id,description,notes_last_updated`, { headers })
           .then(r => r.json())
           .then(d => { prep.hubspot = d; })
-          .catch(() => {})
+          .catch(err => { console.error('[prep] HubSpot deal fetch failed:', err.message || err); })
       );
     }
 
@@ -45,7 +58,7 @@ export default async function handler(req, res) {
         fetch(`${HUBSPOT_BASE}/crm/v3/objects/companies/${hubspotCompanyId}?properties=name,domain,industry,numberofemployees,annualrevenue,description,city,state`, { headers })
           .then(r => r.json())
           .then(d => { prep.companyInfo = d; })
-          .catch(() => {})
+          .catch(err => { console.error('[prep] HubSpot company fetch failed:', err.message || err); })
       );
     }
 
@@ -69,7 +82,7 @@ export default async function handler(req, res) {
               }
             }
           })
-          .catch(() => {})
+          .catch(err => { console.error('[prep] HubSpot contact search failed:', err.message || err); })
       );
     }
 
@@ -91,18 +104,24 @@ export default async function handler(req, res) {
               prep.recentActivity = notes.filter(Boolean);
             }
           })
-          .catch(() => {})
+          .catch(err => { console.error('[prep] HubSpot notes fetch failed:', err.message || err); })
       );
     }
 
     await Promise.all(promises);
+
+    // Log data quality
+    const dataQuality = [prep.hubspot, prep.companyInfo, prep.contactInfo, prep.recentActivity].filter(Boolean).length;
+    if (dataQuality === 0) {
+      console.warn('[prep] All HubSpot data sources returned null — prep will be AI-generated without CRM context');
+    }
 
     // 5. Generate AI prep brief
     if (anthropicKey) {
       const context = [
         `Company: ${company}`,
         contactName ? `Contact: ${contactName}` : null,
-        prep.hubspot?.properties ? `Deal Stage: ${prep.hubspot.properties.dealstage}, Value: ${prep.hubspot.properties.amount}` : null,
+        prep.hubspot?.properties ? `Deal Stage: ${STAGE_MAP[prep.hubspot.properties.dealstage] || prep.hubspot.properties.dealstage}, Value: ${prep.hubspot.properties.amount}` : null,
         prep.companyInfo?.properties ? `Industry: ${prep.companyInfo.properties.industry}, Size: ${prep.companyInfo.properties.numberofemployees} employees, Revenue: ${prep.companyInfo.properties.annualrevenue}` : null,
         prep.contactInfo?.properties ? `Title: ${prep.contactInfo.properties.jobtitle}` : null,
         prep.recentActivity?.length ? `Recent notes: ${prep.recentActivity.map(n => n.properties?.hs_note_body?.substring(0, 200)).join(' | ')}` : null,
