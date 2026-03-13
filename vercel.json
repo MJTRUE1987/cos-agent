@@ -9,6 +9,7 @@
     { "source": "/api/prep", "destination": "/api/prep.js" },
     { "source": "/api/linkedin", "destination": "/api/linkedin.js" },
     { "source": "/api/calendar", "destination": "/api/calendar.js" },
+    { "source": "/api/calendar-create", "destination": "/api/calendar-create.js" },
     { "source": "/api/post-call", "destination": "/api/post-call.js" },
     { "source": "/api/slack", "destination": "/api/slack.js" },
     { "source": "/api/granola", "destination": "/api/granola.js" },
@@ -18,7 +19,8 @@
     { "source": "/api/pricing", "destination": "/api/pricing.js" },
     { "source": "/api/snapshot", "destination": "/api/snapshot.js" },
     { "source": "/api/end-of-day", "destination": "/api/end-of-day.js" },
-    { "source": "/api/end-of-week", "destination": "/api/end-of-week.js" }
+    { "source": "/api/end-of-week", "destination": "/api/end-of-week.js" },
+    { "source": "/api/google-auth", "destination": "/api/google-auth.js" }
   ],
   "headers": [
     {

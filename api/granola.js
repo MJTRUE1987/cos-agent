@@ -7,6 +7,12 @@ const GRANOLA_BASE = 'https://public-api.granola.ai';
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   const token = process.env.GRANOLA_API_KEY;
   if (!token) return res.status(500).json({ error: 'GRANOLA_API_KEY not configured' });
 

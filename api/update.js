@@ -1,3 +1,5 @@
+import { acquireLock, releaseLock } from './lib/kv-lock.js';
+
 let kv = null;
 try {
   const kvModule = await import('@vercel/kv');
@@ -26,18 +28,36 @@ export default async function handler(req, res) {
     const updates = [];
 
     if (mode === 'upsert') {
-      if (actions && Array.isArray(actions)) {
-        const existing = (await kv.get('actions')) || [];
-        updates.push(kv.set('actions', upsertById(existing, actions)));
+      // Acquire distributed lock for read-modify-write operations
+      const lockId = await acquireLock(kv);
+      if (!lockId) {
+        return res.status(409).json({ error: 'Update already in progress, try again shortly' });
       }
-      if (meetings && Array.isArray(meetings)) {
-        const existing = (await kv.get('meetings')) || [];
-        updates.push(kv.set('meetings', upsertByTitle(existing, meetings)));
+      try {
+        if (actions && Array.isArray(actions)) {
+          const existing = (await kv.get('actions')) || [];
+          updates.push(kv.set('actions', upsertById(existing, actions)));
+        }
+        if (meetings && Array.isArray(meetings)) {
+          const existing = (await kv.get('meetings')) || [];
+          updates.push(kv.set('meetings', upsertByTitle(existing, meetings)));
+        }
+        if (pipeline && Array.isArray(pipeline)) {
+          const existing = (await kv.get('pipeline')) || [];
+          updates.push(kv.set('pipeline', upsertById(existing, pipeline)));
+        }
+        if (metadata) updates.push(kv.set('metadata', metadata));
+
+        if (updates.length === 0) {
+          return res.status(400).json({ error: 'No data fields provided' });
+        }
+
+        await Promise.all(updates);
+      } finally {
+        await releaseLock(kv, lockId);
       }
-      if (pipeline && Array.isArray(pipeline)) {
-        const existing = (await kv.get('pipeline')) || [];
-        updates.push(kv.set('pipeline', upsertById(existing, pipeline)));
-      }
+
+      return res.status(200).json({ success: true, mode, updated: [actions&&'actions', meetings&&'meetings', pipeline&&'pipeline', metadata&&'metadata'].filter(Boolean) });
     } else {
       if (actions) updates.push(kv.set('actions', actions));
       if (meetings) updates.push(kv.set('meetings', meetings));

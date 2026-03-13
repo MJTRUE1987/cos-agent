@@ -3,6 +3,13 @@
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Auth check
+  const cosApiKey = process.env.COS_API_KEY;
+  if (!cosApiKey) return res.status(500).json({ error: 'COS_API_KEY not configured on server' });
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${cosApiKey}`) return res.status(401).json({ error: 'Unauthorized' });
+
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -27,7 +34,8 @@ export default async function handler(req, res) {
     });
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      return res.status(500).json({ error: 'Failed to refresh Google token' });
+      console.error('[calendar] Google token refresh failed:', JSON.stringify(tokenData));
+      return res.status(500).json({ error: `Failed to refresh Google token: ${tokenData.error_description || tokenData.error || 'unknown'}` });
     }
 
     // Fetch events for today + next 7 days
