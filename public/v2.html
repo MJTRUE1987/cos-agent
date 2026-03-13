@@ -1422,6 +1422,8 @@ async function loadProjectionView(view) {
         area.innerHTML = renderIntegrationError(data.source || 'gmail', data.error || 'Unknown error');
       } else {
         area.innerHTML = renderInboxView(data);
+        const badge = document.getElementById('inboxCount');
+        if (badge) badge.textContent = String(data.total_count || (data.threads || []).length);
       }
     } else if (view === 'calendar') {
       const data = await safeFetch('/api/v2/projections?type=calendar');
