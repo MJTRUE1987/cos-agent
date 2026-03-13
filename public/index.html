@@ -391,7 +391,12 @@ function saveApiKey() {
   _cosApiKey = inp.value.trim();
   localStorage.setItem('cos_api_key', _cosApiKey);
   document.getElementById('modalContainer').innerHTML = '';
-  loadData().then(() => { renderCurrentTab(); syncInBackground(); startAutoSync(); });
+  loadData().then(() => {
+    if (ACTIONS.length === 0 && PIPELINE.length === 0) {
+      addChat("agent", "<strong style='color:#ef4444;'>Failed to load data.</strong> Your API key may be incorrect. <a href='#' onclick='localStorage.removeItem(\"cos_api_key\");location.reload();' style='color:#60a5fa;'>Try a different key</a>");
+    }
+    renderCurrentTab(); syncInBackground(); startAutoSync();
+  });
 }
 
 // ═══════════════════════════════════════
@@ -485,7 +490,13 @@ function getStateColor(state) { return SIGNAL_STATE_COLORS[state] || '#94a3b8'; 
 function formatStateName(state) { return SIGNAL_STATE_LABELS[state] || state; }
 
 function runSignalEngine() {
-  const { results, log } = _computeSignalStates(ACTIONS, CALENDAR_EVENTS, MEETINGS, PIPELINE);
+  let results, log;
+  try {
+    ({ results, log } = _computeSignalStates(ACTIONS, CALENDAR_EVENTS, MEETINGS, PIPELINE));
+  } catch (err) {
+    console.error('[signal-engine] Error:', err);
+    return new Map();
+  }
   // Debug output
   const resolutions = log.filter(l => l.source === 'resolution');
   if (resolutions.length > 0) {
@@ -3442,7 +3453,8 @@ async function runPostCallCrm() {
 
 async function runPostCallAll() {
   // Run proposal + CRM in parallel, then open email modal
-  await Promise.all([runPostCallProposal(), runPostCallCrm()]);
+  // Use allSettled so email step always runs even if proposal/CRM fail
+  await Promise.allSettled([runPostCallProposal(), runPostCallCrm()]);
   // LinkedIn
   const s = _postCallState;
   if (s.contactName) {
