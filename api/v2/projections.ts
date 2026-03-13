@@ -148,11 +148,18 @@ async function checkIntegrationHealth() {
   try {
     const granolaToken = process.env.GRANOLA_API_KEY;
     if (!granolaToken) throw new Error('GRANOLA_API_KEY not set');
-    const r = await fetch('https://api.granola.ai/v1/notes?limit=1', {
+    const r = await fetch('https://public-api.granola.ai/v1/notes?page_size=1', {
       headers: { Authorization: `Bearer ${granolaToken}` },
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    results.granola = { status: 'connected', checked_at: new Date().toISOString() };
+    const granolaData = await r.json();
+    const noteCount = (granolaData.notes || []).length;
+    results.granola = {
+      status: 'connected',
+      notes_visible: noteCount > 0 || granolaData.hasMore,
+      checked_at: new Date().toISOString(),
+      ...(noteCount === 0 && !granolaData.hasMore ? { warning: 'API key valid but no notes in shared workspace folders' } : {}),
+    };
   } catch (err: any) {
     results.granola = { status: 'failed', error: err.message, checked_at: new Date().toISOString() };
   }

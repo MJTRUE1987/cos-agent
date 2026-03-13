@@ -504,10 +504,15 @@ async function loadIntegrationHealth() {
         const statusEl = document.getElementById('hs-' + name);
         if (!statusEl) continue;
         const dot = statusEl.parentElement.querySelector('.health-dot');
-        if (info.status === 'connected') {
+        if (info.status === 'connected' && info.notes_visible !== false) {
           dot.className = 'health-dot connected';
           statusEl.textContent = 'connected';
           statusEl.style.color = '#10b981';
+        } else if (info.status === 'connected' && info.notes_visible === false) {
+          dot.className = 'health-dot checking';
+          statusEl.textContent = 'no shared notes';
+          statusEl.style.color = '#f59e0b';
+          statusEl.title = info.warning || 'API key valid but no notes in shared workspace folders';
         } else {
           dot.className = 'health-dot failed';
           statusEl.textContent = 'failed';
