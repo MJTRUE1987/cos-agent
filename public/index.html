@@ -104,6 +104,35 @@
   .pipe-table .deal-amount { color: #10b981; font-weight: 600; }
   .stage-pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
 
+  /* PIPELINE V2 */
+  .pipe-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .pipe-filter-group { display: flex; gap: 4px; align-items: center; }
+  .pipe-filter-group label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; margin-right: 4px; font-weight: 600; }
+  .pipe-filter-btn { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: #111827; border: 1px solid #1e293b; color: #94a3b8; cursor: pointer; transition: all 0.15s; }
+  .pipe-filter-btn:hover, .pipe-filter-btn.active { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.08); }
+  .pipe-summary { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .pipe-stat { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; min-width: 120px; }
+  .pipe-stat .stat-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+  .pipe-stat .stat-value { font-size: 18px; font-weight: 700; color: #fff; }
+  .pipe-stat .stat-sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+  .pipe-stage-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 16px; background: #1e293b; }
+  .pipe-stage-bar .bar-seg { height: 100%; transition: width 0.3s; }
+  .pipe-stage-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .pipe-stage-legend .leg-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #94a3b8; }
+  .pipe-stage-legend .leg-dot { width: 8px; height: 8px; border-radius: 2px; }
+  .pipe-grouping { display: flex; gap: 4px; margin-left: auto; }
+  .pipe-table .row-overdue { background: rgba(239,68,68,0.04); }
+  .pipe-table .row-stale { background: rgba(245,158,11,0.04); }
+  .pipe-table .row-large { border-left: 2px solid #10b981; }
+  .pipe-table .next-step { font-size: 11px; color: #94a3b8; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pipe-group-header { font-size: 13px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.8px; padding: 12px 12px 6px; border-bottom: 1px solid #1e293b; margin-top: 16px; display: flex; align-items: center; gap: 8px; }
+  .pipe-group-header .group-count { font-size: 10px; font-weight: 600; color: #475569; background: #1e293b; padding: 1px 6px; border-radius: 8px; }
+  .pipe-group-header .group-value { font-size: 11px; font-weight: 600; color: #10b981; margin-left: auto; }
+  .pipe-renewals-toggle { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; margin-top: 20px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94a3b8; font-weight: 600; }
+  .pipe-renewals-toggle:hover { border-color: #334155; color: #cbd5e1; }
+  .pipe-renewals-toggle .chevron { transition: transform 0.2s; }
+  .pipe-renewals-toggle .chevron.open { transform: rotate(90deg); }
+
   /* CHAT PANEL */
   .chat-panel { width: 370px; background: #0f1525; border-left: 1px solid #1e293b; display: flex; flex-direction: column; flex-shrink: 0; }
   .chat-header { padding: 14px 18px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
@@ -428,6 +457,16 @@ const STAGE_COLORS = {
 };
 
 let PIPELINE = [];
+
+// Pipeline filter state
+let pipeOwnerFilter = 'all';
+let pipeDealTypeFilter = 'new';
+let pipeStatusFilter = 'open';
+let pipeCloseFilter = '90days';
+let pipeSearch = '';
+let pipeSearchCursor = 0;
+let pipeGrouping = 'table'; // table | owner | stage
+let pipeRenewalsOpen = false;
 
 // ═══ ALL ACTION ITEMS ═══
 let ACTIONS = [];
@@ -5122,44 +5161,274 @@ function getCrmGaps() {
 // ───────────────────────────────────────
 // VIEW 2: PIPELINE — clean table, no stat cards overhead
 // ───────────────────────────────────────
+function inferDealType(deal) {
+  const n = (deal.name || '').toLowerCase();
+  if (/upsell|expansion|upgrade/i.test(n)) return 'expansion';
+  if (/renewal|renew|winback/i.test(n)) return 'renewal';
+  return 'new';
+}
+
+function getDaysInStage(deal) {
+  // Approximate from close date proximity; if no close, unknown
+  if (!deal.close) return null;
+  const close = new Date(deal.close);
+  const now = new Date();
+  const diff = Math.abs(Math.floor((now - close) / 86400000));
+  return diff;
+}
+
+function getQuarterEnd() {
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3);
+  return new Date(now.getFullYear(), (q + 1) * 3, 0);
+}
+
+function getNextStepForDeal(deal) {
+  // Find matching action from ACTIONS
+  const match = ACTIONS.find(a => {
+    const dn = (deal.name || '').toLowerCase();
+    const ac = (a.company || '').toLowerCase();
+    return ac && dn.includes(ac) || ac.includes(dn.split(' ')[0]);
+  });
+  if (match && match.status === 'open') return match.task;
+  return null;
+}
+
 function renderPipelineView(main) {
   const stageOrder = ["Committed","Negotiating","Demo Completed","Demo Scheduled","Disco Complete","Disco Booked","Nurture","Booking"];
-  const sorted = [...PIPELINE].sort((a,b) => {
+  const closedStages = ["Closed Won", "Closed Lost"];
+  const openStages = stageOrder;
+
+  // Derive unique owners from data
+  const allOwners = [...new Set(PIPELINE.map(d => d.owner).filter(Boolean))].sort();
+
+  // Classify deals
+  const enriched = PIPELINE.map(d => ({
+    ...d,
+    dealType: inferDealType(d),
+    isOpen: !closedStages.includes(d.stage),
+    isClosed: closedStages.includes(d.stage),
+    isClosedWon: d.stage === 'Closed Won',
+    isClosedLost: d.stage === 'Closed Lost',
+    closeDate: d.close ? new Date(d.close) : null,
+    daysInStage: getDaysInStage(d),
+    nextStep: getNextStepForDeal(d),
+  }));
+
+  // Separate renewals/expansions for secondary section
+  const renewalExpansion = enriched.filter(d => d.dealType === 'renewal' || d.dealType === 'expansion');
+
+  // Apply filters
+  let filtered = [...enriched];
+
+  // Deal type filter
+  if (pipeDealTypeFilter === 'new') filtered = filtered.filter(d => d.dealType === 'new');
+  else if (pipeDealTypeFilter === 'expansion') filtered = filtered.filter(d => d.dealType === 'expansion');
+  else if (pipeDealTypeFilter === 'renewal') filtered = filtered.filter(d => d.dealType === 'renewal');
+
+  // Status filter
+  if (pipeStatusFilter === 'open') filtered = filtered.filter(d => d.isOpen);
+  else if (pipeStatusFilter === 'closedwon') filtered = filtered.filter(d => d.isClosedWon);
+  else if (pipeStatusFilter === 'closedlost') filtered = filtered.filter(d => d.isClosedLost);
+
+  // Owner filter
+  if (pipeOwnerFilter !== 'all') {
+    filtered = filtered.filter(d => d.owner === pipeOwnerFilter);
+  }
+
+  // Close window filter
+  const now = new Date();
+  if (pipeCloseFilter === 'quarter') {
+    const qEnd = getQuarterEnd();
+    filtered = filtered.filter(d => d.closeDate && d.closeDate <= qEnd);
+  } else if (pipeCloseFilter === '90days') {
+    const future90 = new Date(now.getTime() + 90 * 86400000);
+    filtered = filtered.filter(d => !d.closeDate || d.closeDate <= future90);
+  } else if (pipeCloseFilter === 'future') {
+    filtered = filtered.filter(d => !d.closeDate || d.closeDate >= now);
+  }
+
+  // Search filter
+  if (pipeSearch) {
+    const q = pipeSearch.toLowerCase();
+    filtered = filtered.filter(d => (d.name||'').toLowerCase().includes(q) || (d.owner||'').toLowerCase().includes(q) || (d.stage||'').toLowerCase().includes(q));
+  }
+
+  // Sort by stage order then amount
+  filtered.sort((a, b) => {
     const sa = stageOrder.indexOf(a.stage), sb = stageOrder.indexOf(b.stage);
-    if (sa !== sb) return sa - sb;
-    return (b.amount||0) - (a.amount||0);
+    const saIdx = sa >= 0 ? sa : 999, sbIdx = sb >= 0 ? sb : 999;
+    if (saIdx !== sbIdx) return saIdx - sbIdx;
+    return (b.amount || 0) - (a.amount || 0);
   });
 
-  const active = PIPELINE.filter(d => d.stage !== "Nurture" && d.stage !== "Booking");
-  const total = active.reduce((s,d) => s + (d.amount || 0), 0);
-  const committed = PIPELINE.filter(d => d.stage === "Committed");
-  const committedVal = committed.reduce((s,d) => s + (d.amount || 0), 0);
+  // Compute summary stats
+  const totalValue = filtered.reduce((s, d) => s + (d.amount || 0), 0);
+  const openDeals = filtered.filter(d => d.isOpen);
+  const overdueDeals = filtered.filter(d => d.closeDate && d.closeDate < now && d.isOpen);
+  const stagedays = filtered.filter(d => d.daysInStage != null).map(d => d.daysInStage);
+  const medianDays = stagedays.length > 0 ? stagedays.sort((a,b) => a-b)[Math.floor(stagedays.length/2)] : 0;
 
-  let html = `<h1>Pipeline — Brand</h1>`;
-  html += `<div class="subtitle">${active.length} active deals · ${fmtMoney(total)} total · ${fmtMoney(committedVal)} committed (${committed.length})`;
+  // Committed pipeline
+  const committedDeals = filtered.filter(d => d.stage === 'Committed');
+  const committedVal = committedDeals.reduce((s, d) => s + (d.amount || 0), 0);
+
+  // Health score
+  let healthHtml = '';
   if (_intelligenceCache?.pipelineHealth?.score != null) {
     const score = _intelligenceCache.pipelineHealth.score;
     const scoreColor = score >= 70 ? '#22c55e' : score >= 40 ? '#f59e0b' : '#ef4444';
-    html += ` · <span style="color:${scoreColor};font-weight:600;">Health: ${score}/100</span>`;
+    healthHtml = ` · <span style="color:${scoreColor};font-weight:600;">Health: ${score}/100</span>`;
   }
+
+  let html = `<h1>Pipeline</h1>`;
+  html += `<div class="subtitle">${filtered.length} deals · ${fmtMoney(totalValue)} pipeline value${healthHtml}</div>`;
+
+  // ── FILTER BAR ──
+  html += `<div class="pipe-filters">`;
+
+  // Owner filter - dynamic from data
+  html += `<div class="pipe-filter-group"><label>Owner</label>`;
+  html += `<button class="pipe-filter-btn ${pipeOwnerFilter==='all'?'active':''}" onclick="pipeOwnerFilter='all';renderPipelineView(document.getElementById('main'))">All</button>`;
+  allOwners.forEach(o => {
+    html += `<button class="pipe-filter-btn ${pipeOwnerFilter===o?'active':''}" onclick="pipeOwnerFilter='${o}';renderPipelineView(document.getElementById('main'))">${o}</button>`;
+  });
   html += `</div>`;
 
-  // Intelligence alerts
+  // Deal type filter
+  html += `<div class="pipe-filter-group"><label>Type</label>`;
+  html += `<button class="pipe-filter-btn ${pipeDealTypeFilter==='new'?'active':''}" onclick="pipeDealTypeFilter='new';renderPipelineView(document.getElementById('main'))">New Business</button>`;
+  html += `<button class="pipe-filter-btn ${pipeDealTypeFilter==='expansion'?'active':''}" onclick="pipeDealTypeFilter='expansion';renderPipelineView(document.getElementById('main'))">Expansion</button>`;
+  html += `<button class="pipe-filter-btn ${pipeDealTypeFilter==='renewal'?'active':''}" onclick="pipeDealTypeFilter='renewal';renderPipelineView(document.getElementById('main'))">Renewal</button>`;
+  html += `<button class="pipe-filter-btn ${pipeDealTypeFilter==='all'?'active':''}" onclick="pipeDealTypeFilter='all';renderPipelineView(document.getElementById('main'))">All</button>`;
+  html += `</div>`;
+
+  // Status filter
+  html += `<div class="pipe-filter-group"><label>Status</label>`;
+  html += `<button class="pipe-filter-btn ${pipeStatusFilter==='open'?'active':''}" onclick="pipeStatusFilter='open';renderPipelineView(document.getElementById('main'))">Open</button>`;
+  html += `<button class="pipe-filter-btn ${pipeStatusFilter==='closedwon'?'active':''}" onclick="pipeStatusFilter='closedwon';renderPipelineView(document.getElementById('main'))">Closed Won</button>`;
+  html += `<button class="pipe-filter-btn ${pipeStatusFilter==='closedlost'?'active':''}" onclick="pipeStatusFilter='closedlost';renderPipelineView(document.getElementById('main'))">Closed Lost</button>`;
+  html += `<button class="pipe-filter-btn ${pipeStatusFilter==='all'?'active':''}" onclick="pipeStatusFilter='all';renderPipelineView(document.getElementById('main'))">All</button>`;
+  html += `</div>`;
+
+  // Close window filter
+  html += `<div class="pipe-filter-group"><label>Close</label>`;
+  html += `<button class="pipe-filter-btn ${pipeCloseFilter==='quarter'?'active':''}" onclick="pipeCloseFilter='quarter';renderPipelineView(document.getElementById('main'))">This Quarter</button>`;
+  html += `<button class="pipe-filter-btn ${pipeCloseFilter==='90days'?'active':''}" onclick="pipeCloseFilter='90days';renderPipelineView(document.getElementById('main'))">Next 90 Days</button>`;
+  html += `<button class="pipe-filter-btn ${pipeCloseFilter==='future'?'active':''}" onclick="pipeCloseFilter='future';renderPipelineView(document.getElementById('main'))">All Future</button>`;
+  html += `<button class="pipe-filter-btn ${pipeCloseFilter==='all'?'active':''}" onclick="pipeCloseFilter='all';renderPipelineView(document.getElementById('main'))">All</button>`;
+  html += `</div>`;
+
+  // Search
+  html += `<input class="search-input" id="pipeSearchInput" type="text" placeholder="Search deals..." value="${pipeSearch}" oninput="pipeSearch=this.value;pipeSearchCursor=this.selectionStart;renderPipelineView(document.getElementById('main'))" style="max-width:200px;padding:6px 10px;font-size:12px;">`;
+
+  html += `</div>`;
+
+  // ── SUMMARY BAR ──
+  html += `<div class="pipe-summary">`;
+  html += `<div class="pipe-stat"><div class="stat-label">Pipeline Value</div><div class="stat-value" style="color:#10b981;">${fmtMoney(totalValue)}</div><div class="stat-sub">${fmtMoney(committedVal)} committed</div></div>`;
+  html += `<div class="pipe-stat"><div class="stat-label">Open Deals</div><div class="stat-value">${openDeals.length}</div><div class="stat-sub">${filtered.length} shown</div></div>`;
+  html += `<div class="pipe-stat"><div class="stat-label">Overdue Close</div><div class="stat-value" style="color:${overdueDeals.length > 0 ? '#ef4444' : '#64748b'};">${overdueDeals.length}</div><div class="stat-sub">past close date</div></div>`;
+  html += `<div class="pipe-stat"><div class="stat-label">Median Days</div><div class="stat-value">${medianDays}</div><div class="stat-sub">days near close</div></div>`;
+  html += `</div>`;
+
+  // ── STAGE DISTRIBUTION BAR ──
+  const stageColors = {
+    'Committed': '#10b981', 'Negotiating': '#60a5fa', 'Demo Completed': '#a855f7',
+    'Demo Scheduled': '#f59e0b', 'Disco Complete': '#eab308', 'Disco Booked': '#94a3b8',
+    'Nurture': '#64748b', 'Booking': '#475569',
+  };
+  const stageCounts = {};
+  filtered.forEach(d => { stageCounts[d.stage] = (stageCounts[d.stage] || 0) + 1; });
+  const totalForBar = filtered.length || 1;
+
+  html += `<div class="pipe-stage-bar">`;
+  stageOrder.forEach(s => {
+    if (!stageCounts[s]) return;
+    const pct = (stageCounts[s] / totalForBar * 100).toFixed(1);
+    html += `<div class="bar-seg" style="width:${pct}%;background:${stageColors[s] || '#475569'};" title="${s}: ${stageCounts[s]}"></div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="pipe-stage-legend">`;
+  stageOrder.forEach(s => {
+    if (!stageCounts[s]) return;
+    html += `<div class="leg-item"><div class="leg-dot" style="background:${stageColors[s] || '#475569'};"></div>${s} (${stageCounts[s]})</div>`;
+  });
+  html += `</div>`;
+
+  // ── INTELLIGENCE ALERTS ──
   html += `<div id="intelligenceAlerts"></div>`;
 
-  html += `<table class="pipe-table"><thead><tr><th>Deal</th><th>Value</th><th>Stage</th><th>Owner</th><th>Close</th></tr></thead><tbody>`;
-  sorted.forEach(d => {
-    const owner = d.owner || "—";
-    const ownerCls = OWNER_CLASS[owner] || "owner-other";
-    const sc = STAGE_COLORS[d.stage] || "background:#1e293b;color:#64748b;";
-    const isYours = d.owner === "Mike" ? "style='background:rgba(59,130,246,0.04);'" : "";
-    const closeStr = d.close ? new Date(d.close).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—";
-    const closeOverdue = d.close && new Date(d.close) < TODAY ? " style='color:#ef4444;'" : " style='color:#64748b;font-size:12px;'";
-    html += `<tr ${isYours}><td class="deal-name"><a href="https://app.hubspot.com/contacts/21506140/record/0-3/${d.id}" target="_blank">${d.name}</a></td><td class="deal-amount">${fmtMoney(d.amount)}</td><td><span class="stage-pill" style="${sc}">${d.stage}</span></td><td><span class="owner-tag ${ownerCls}">${owner}</span></td><td${closeOverdue}>${closeStr}</td></tr>`;
-  });
-  html += `</tbody></table>`;
+  // ── GROUPING TOGGLE ──
+  html += `<div style="display:flex;align-items:center;margin-bottom:12px;">`;
+  html += `<span style="font-size:11px;color:#475569;font-weight:600;margin-right:8px;">VIEW:</span>`;
+  html += `<div class="pipe-grouping">`;
+  html += `<button class="pipe-filter-btn ${pipeGrouping==='table'?'active':''}" onclick="pipeGrouping='table';renderPipelineView(document.getElementById('main'))">Table</button>`;
+  html += `<button class="pipe-filter-btn ${pipeGrouping==='owner'?'active':''}" onclick="pipeGrouping='owner';renderPipelineView(document.getElementById('main'))">By Owner</button>`;
+  html += `<button class="pipe-filter-btn ${pipeGrouping==='stage'?'active':''}" onclick="pipeGrouping='stage';renderPipelineView(document.getElementById('main'))">By Stage</button>`;
+  html += `</div></div>`;
 
-  // Meetings with open follow-ups related to pipeline
+  // ── TABLE / GROUPED VIEW ──
+  const largeDealThreshold = 100000;
+
+  function renderDealRow(d) {
+    const owner = d.owner || '—';
+    const ownerCls = OWNER_CLASS[owner] || 'owner-other';
+    const sc = STAGE_COLORS[d.stage] || 'background:#1e293b;color:#64748b;';
+    const closeStr = d.close ? new Date(d.close).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—';
+    const isOverdue = d.closeDate && d.closeDate < now && d.isOpen;
+    const isStale = d.daysInStage != null && d.daysInStage > 14 && !isOverdue;
+    const isLarge = (d.amount || 0) >= largeDealThreshold;
+    let rowClass = '';
+    if (isOverdue) rowClass = 'row-overdue';
+    else if (isStale) rowClass = 'row-stale';
+    if (isLarge) rowClass += ' row-large';
+    const closeTdStyle = isOverdue ? 'color:#ef4444;font-weight:600;' : 'color:#64748b;font-size:12px;';
+    const nextStep = d.nextStep || '—';
+    const daysStr = d.daysInStage != null ? `${d.daysInStage}d` : '—';
+    return `<tr class="${rowClass}"><td class="deal-name"><a href="https://app.hubspot.com/contacts/21506140/record/0-3/${d.id}" target="_blank">${d.name}</a></td><td class="deal-amount">${fmtMoney(d.amount)}</td><td><span class="stage-pill" style="${sc}">${d.stage}</span></td><td><span class="owner-tag ${ownerCls}">${owner}</span></td><td class="next-step" title="${nextStep}">${nextStep}</td><td style="${closeTdStyle}">${closeStr}</td><td style="color:#64748b;font-size:12px;text-align:center;">${daysStr}</td></tr>`;
+  }
+
+  const tableHead = `<table class="pipe-table"><thead><tr><th>Deal</th><th>Value</th><th>Stage</th><th>Owner</th><th>Next Step</th><th>Close Date</th><th>Days</th></tr></thead><tbody>`;
+
+  if (pipeGrouping === 'table') {
+    html += tableHead;
+    filtered.forEach(d => { html += renderDealRow(d); });
+    html += `</tbody></table>`;
+  } else if (pipeGrouping === 'owner') {
+    const groups = {};
+    filtered.forEach(d => { const k = d.owner || 'Unassigned'; (groups[k] = groups[k] || []).push(d); });
+    Object.keys(groups).sort().forEach(owner => {
+      const deals = groups[owner];
+      const groupVal = deals.reduce((s, d) => s + (d.amount || 0), 0);
+      html += `<div class="pipe-group-header">${owner}<span class="group-count">${deals.length}</span><span class="group-value">${fmtMoney(groupVal)}</span></div>`;
+      html += tableHead;
+      deals.forEach(d => { html += renderDealRow(d); });
+      html += `</tbody></table>`;
+    });
+  } else if (pipeGrouping === 'stage') {
+    stageOrder.forEach(stage => {
+      const deals = filtered.filter(d => d.stage === stage);
+      if (deals.length === 0) return;
+      const groupVal = deals.reduce((s, d) => s + (d.amount || 0), 0);
+      html += `<div class="pipe-group-header"><span class="stage-pill" style="${STAGE_COLORS[stage] || 'background:#1e293b;color:#64748b;'}">${stage}</span><span class="group-count">${deals.length}</span><span class="group-value">${fmtMoney(groupVal)}</span></div>`;
+      html += tableHead;
+      deals.forEach(d => { html += renderDealRow(d); });
+      html += `</tbody></table>`;
+    });
+    // Any stages not in stageOrder
+    const otherDeals = filtered.filter(d => !stageOrder.includes(d.stage));
+    if (otherDeals.length > 0) {
+      const groupVal = otherDeals.reduce((s, d) => s + (d.amount || 0), 0);
+      html += `<div class="pipe-group-header">Other<span class="group-count">${otherDeals.length}</span><span class="group-value">${fmtMoney(groupVal)}</span></div>`;
+      html += tableHead;
+      otherDeals.forEach(d => { html += renderDealRow(d); });
+      html += `</tbody></table>`;
+    }
+  }
+
+  // ── MEETINGS NEEDING FOLLOW-UP ──
   const pipelineMeetings = MEETINGS.filter(m => !m.upcoming && m.status === "open");
   if (pipelineMeetings.length > 0) {
     html += `<div class="section" style="margin-top:24px;">`;
@@ -5180,9 +5449,29 @@ function renderPipelineView(main) {
     html += `</div>`;
   }
 
+  // ── RENEWALS & EXPANSIONS (collapsible) ──
+  if (renewalExpansion.length > 0 && pipeDealTypeFilter !== 'renewal' && pipeDealTypeFilter !== 'expansion') {
+    const reVal = renewalExpansion.reduce((s, d) => s + (d.amount || 0), 0);
+    html += `<div class="pipe-renewals-toggle" onclick="pipeRenewalsOpen=!pipeRenewalsOpen;renderPipelineView(document.getElementById('main'))">`;
+    html += `<span class="chevron ${pipeRenewalsOpen ? 'open' : ''}">&#9654;</span>`;
+    html += `Renewals & Expansions (${renewalExpansion.length}) · ${fmtMoney(reVal)}`;
+    html += `</div>`;
+    if (pipeRenewalsOpen) {
+      html += tableHead;
+      renewalExpansion.sort((a, b) => (b.amount || 0) - (a.amount || 0)).forEach(d => { html += renderDealRow(d); });
+      html += `</tbody></table>`;
+    }
+  }
+
   main.innerHTML = html;
 
-  // Load intelligence data and render alerts
+  // Restore search focus
+  if (pipeSearch) {
+    const si = document.getElementById('pipeSearchInput');
+    if (si) { si.focus(); si.selectionStart = si.selectionEnd = pipeSearchCursor; }
+  }
+
+  // Load intelligence alerts
   loadIntelligence().then(intel => {
     if (intel) renderIntelligenceAlerts(intel);
   });
