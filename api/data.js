@@ -29,11 +29,15 @@ export default async function handler(req, res) {
       await Promise.all([
         kv.set('actions', seedData.actions),
         kv.set('meetings', seedData.meetings),
-        kv.set('pipeline', seedData.pipeline),
+        // DO NOT overwrite pipeline — HubSpot is source of truth
         seedData.metadata ? kv.set('metadata', seedData.metadata) : Promise.resolve(),
       ]);
-      console.log('[data] KV reseeded from seed-data.json');
-      return res.status(200).json({ success: true, message: 'KV reseeded', actionCount: seedData.actions?.length });
+      // Force full HubSpot sync on next sync cycle
+      const meta = (await kv.get('metadata')) || {};
+      meta.lastSyncedAt = null;
+      await kv.set('metadata', meta);
+      console.log('[data] KV reseeded from seed-data.json (pipeline preserved, full sync flagged)');
+      return res.status(200).json({ success: true, message: 'KV reseeded (pipeline preserved)', actionCount: seedData.actions?.length });
     }
     return res.status(400).json({ error: 'Unknown action' });
   }

@@ -61,21 +61,21 @@ const OWNERS: Record<string, string> = {
   '151853665':  'Mike',
   '82490290':   'Brian',
   '743878021':  'Will',
-  '1003618676': 'Jason',
   '84289936':   'Michael O',
   '82544484':   'Jason N',
 };
 
-// Deactivated/removed owner remapping
-// When a deal is owned by a deactivated rep, remap to the correct active rep
-const DEACTIVATED_OWNER_REMAP: Record<string, string> = {
-  '927267605': '82490290',   // Laura Nelson (deactivated) → Brian
+// Owner remapping: deactivated reps and reassigned reps → Brian
+// Laura Nelson's deals were auto-reassigned to Jason (1003618676) in HubSpot,
+// but the correct owner is Brian. Remap both Laura's original ID and Jason's ID.
+const OWNER_REMAP: Record<string, string> = {
+  '927267605':  '82490290',   // Laura Nelson (deactivated) → Brian
+  '1003618676': '82490290',   // Jason (has Laura's reassigned deals) → Brian
 };
 
 function resolveOwnerName(ownerId: string | undefined | null): string {
   if (!ownerId) return '';
-  // If owner is deactivated, remap to the correct active rep
-  const remappedId = DEACTIVATED_OWNER_REMAP[ownerId] || ownerId;
+  const remappedId = OWNER_REMAP[ownerId] || ownerId;
   return OWNERS[remappedId] || '';
 }
 

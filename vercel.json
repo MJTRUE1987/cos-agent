@@ -27,7 +27,8 @@
     { "source": "/api/v2/projections", "destination": "/api/v2/projections.ts" },
     { "source": "/api/v2/execution", "destination": "/api/v2/execution.ts" },
     { "source": "/api/v2/scheduling", "destination": "/api/v2/scheduling.ts" },
-    { "source": "/api/v2/wizard", "destination": "/api/v2/wizard.ts" }
+    { "source": "/api/v2/wizard", "destination": "/api/v2/wizard.ts" },
+    { "source": "/api/v2/failures", "destination": "/api/v2/failures.ts" }
   ],
   "headers": [
     {

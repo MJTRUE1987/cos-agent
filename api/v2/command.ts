@@ -11,9 +11,12 @@
 import { safeHandler } from './_handler.js';
 import { interpretCommand } from '../../server/agent/commandInterpreter.js';
 import type { ResolvedEntity } from '../../server/agent/commandInterpreter.js';
+import { classifyIntent } from '../../server/agent/intentRouter.js';
 import { generatePlan } from '../../server/agent/planner.js';
 import { runPlan } from '../../server/agent/executor.js';
 import { appendEvent, generateId } from '../../server/event-log/eventStore.js';
+import { captureFailure } from '../../server/failure/failureStore.js';
+import { logAction } from '../../server/failure/actionLogger.js';
 
 const HUBSPOT_BASE = 'https://api.hubapi.com';
 const GMAIL_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -66,8 +69,28 @@ export default safeHandler('command', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing "text" field' });
   }
 
-  // Step 1: Interpret
+  // Step 0: Strict intent classification (deterministic, no AI)
+  const routerClass = classifyIntent(text);
+
+  // Step 0.5: Log command submission
+  await logAction('command_submit', { command_id: undefined, metadata: { raw_text: text, router_class: routerClass.top_level } }).catch(() => {});
+
+  // Step 1: Interpret (AI-powered)
   const intent = await interpretCommand(text, context);
+
+  // Cross-validate: if router says read_query but AI says workflow, trust the router
+  // The router is deterministic and uses the default rule: no mutation verb = read
+  if (routerClass.top_level === 'read_query' && !READ_INTENTS.has(intent.intent) && intent.intent !== 'email_context.recommendation') {
+    // Override to the router's sub_intent if it has one
+    if (routerClass.sub_intent.startsWith('read.')) {
+      intent.intent = routerClass.sub_intent;
+      intent.mode = 'analyze';
+    }
+  }
+  // If router says create_wizard, force wizard mode
+  if (routerClass.top_level === 'create_wizard' && !WIZARD_INTENTS.has(intent.intent)) {
+    intent.intent = 'opportunity.create';
+  }
 
   await appendEvent({
     event_type: 'agent.command.received',
@@ -88,6 +111,12 @@ export default safeHandler('command', async (req, res) => {
       command_id: intent.command_id,
     },
   });
+
+  // Normalize target_stage to HubSpot stage ID immediately after interpretation
+  // (must happen before any early returns so all responses have the correct ID)
+  if (intent.parameters?.target_stage) {
+    intent.parameters.target_stage = normalizeStageId(intent.parameters.target_stage);
+  }
 
   // Low confidence or clarifications needed
   if (intent.confidence < 0.4 || intent.clarifications.length > 0) {
@@ -123,6 +152,16 @@ export default safeHandler('command', async (req, res) => {
         read_result: readResult,
       });
     } catch (err: any) {
+      await captureFailure({
+        error_type: 'api_error',
+        error_message: `/api/v2/command:read: ${err.message || 'Unknown'}`,
+        stack: err.stack,
+        severity: 'high',
+        command_id: intent.command_id,
+        intent: intent.intent,
+        entity_snapshot: intent.entities,
+        reproducible_input: { raw_text: text, context },
+      }).catch(() => {});
       return res.status(200).json({
         success: false,
         status: 'read_error',
@@ -161,6 +200,16 @@ export default safeHandler('command', async (req, res) => {
         recommendation,
       });
     } catch (err: any) {
+      await captureFailure({
+        error_type: 'api_error',
+        error_message: `/api/v2/command:recommendation: ${err.message || 'Unknown'}`,
+        stack: err.stack,
+        severity: 'high',
+        command_id: intent.command_id,
+        intent: intent.intent,
+        entity_snapshot: intent.entities,
+        reproducible_input: { raw_text: text, context },
+      }).catch(() => {});
       return res.status(200).json({
         success: false,
         status: 'recommendation_error',
@@ -357,28 +406,24 @@ export default safeHandler('command', async (req, res) => {
       try {
         const after = new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0];
         const listR = await fetch(
-          `https://public-api.granola.ai/v1/notes?page_size=10&created_after=${after}`,
+          `https://public-api.granola.ai/v1/notes?page_size=30&created_after=${after}`,
           { headers: { Authorization: `Bearer ${granolaKey}` } }
         );
         if (listR.ok) {
           const listData = await listR.json();
           const notes = listData.notes || [];
-          const q = companyName.toLowerCase();
-          const match = notes.find((n: any) =>
-            (n.title || '').toLowerCase().includes(q) ||
-            (n.attendees || []).some((a: any) =>
-              (a.name || '').toLowerCase().includes(q) ||
-              (a.email || '').toLowerCase().includes(q)
-            ) ||
-            (n.calendar_event?.title || '').toLowerCase().includes(q)
-          );
-          if (match) {
+          const matches = scoreGranolaNotes(notes, companyName);
+          if (matches.length > 0) {
+            const best = matches[0];
             granolaPreview = {
               found: true,
-              note_id: match.id,
-              title: match.title,
-              created_at: match.created_at,
-              attendees: (match.attendees || []).map((a: any) => a.name).filter(Boolean),
+              note_id: best.note.id,
+              title: best.note.title,
+              created_at: best.note.created_at,
+              attendees: (best.note.attendees || []).map((a: any) => a.name).filter(Boolean),
+              match_strategy: best.match_strategy,
+              match_score: best.match_score,
+              total_matches: matches.length,
             };
           }
         }
@@ -390,11 +435,6 @@ export default safeHandler('command', async (req, res) => {
       _granola_preview: granolaPreview,
       _workflow_type: 'stage_update_with_notes',
     };
-  }
-
-  // Normalize target_stage to HubSpot stage ID before planning
-  if (intent.parameters?.target_stage) {
-    intent.parameters.target_stage = normalizeStageId(intent.parameters.target_stage);
   }
 
   // Step 2: Plan
@@ -877,28 +917,23 @@ async function executeEmailRecommendation(intent: any): Promise<any> {
       };
     })(),
 
-    // 5. Granola meeting notes (last 14 days)
+    // 5. Granola meeting notes (last 14 days) — multi-strategy matching
     (async () => {
       if (!granolaKey) return { notes: [] };
       const after = new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0];
       const r = await fetch(
-        `https://public-api.granola.ai/v1/notes?page_size=10&created_after=${after}`,
+        `https://public-api.granola.ai/v1/notes?page_size=30&created_after=${after}`,
         { headers: { Authorization: `Bearer ${granolaKey}` } }
       );
       if (!r.ok) return { notes: [] };
       const data = await r.json();
-      const q = companyName.toLowerCase();
-      const matched = (data.notes || []).filter((n: any) =>
-        (n.title || '').toLowerCase().includes(q) ||
-        (n.attendees || []).some((a: any) =>
-          (a.name || '').toLowerCase().includes(q) || (a.email || '').toLowerCase().includes(q)
-        ) ||
-        (n.calendar_event?.title || '').toLowerCase().includes(q)
-      );
+      const matches = scoreGranolaNotes(data.notes || [], companyName);
       return {
-        notes: matched.map((n: any) => ({
-          id: n.id, title: n.title, created_at: n.created_at,
-          attendees: (n.attendees || []).map((a: any) => a.name).filter(Boolean),
+        notes: matches.map((m: any) => ({
+          id: m.note.id, title: m.note.title, created_at: m.note.created_at,
+          attendees: (m.note.attendees || []).map((a: any) => a.name).filter(Boolean),
+          match_strategy: m.match_strategy,
+          match_score: m.match_score,
         })),
       };
     })(),
@@ -1062,6 +1097,76 @@ function buildRecommendationContext(
   }
 
   return parts.join('\n');
+}
+
+/**
+ * Multi-strategy Granola note matching (mirrors server/tools/granola/getNotes.ts).
+ * Returns scored matches sorted by score descending.
+ */
+function scoreGranolaNotes(notes: any[], companyName: string): { note: any; match_score: number; match_strategy: string }[] {
+  const q = companyName.toLowerCase();
+  const qEsc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordRe = new RegExp(`(?:^|\\W)${qEsc}(?:$|\\W)`, 'i');
+  const domainFragment = q.replace(/[^a-z0-9]/g, '');
+
+  const scored: { note: any; match_score: number; match_strategy: string }[] = [];
+
+  for (const n of notes) {
+    const attendees = (n.attendees || []).map((a: any) => ({
+      name: (a.name || '').toLowerCase(),
+      email: (a.email || '').toLowerCase(),
+    }));
+    let bestScore = 0;
+    let bestStrategy = '';
+
+    // Strategy 1: Calendar event match
+    if (n.calendar_event?.title) {
+      const ct = n.calendar_event.title.toLowerCase();
+      if (ct === q) { bestScore = 100; bestStrategy = 'calendar_event'; }
+      else if (wordRe.test(n.calendar_event.title) && bestScore < 90) { bestScore = 90; bestStrategy = 'calendar_event'; }
+      else if (ct.includes(q) && bestScore < 75) { bestScore = 75; bestStrategy = 'calendar_event'; }
+    }
+
+    // Strategy 2: Participant email
+    if (domainFragment.length >= 3) {
+      for (const a of attendees) {
+        if (a.email && a.email.includes(domainFragment)) {
+          const s = a.email.split('@')[1]?.includes(domainFragment) ? 85 : 70;
+          if (s > bestScore) { bestScore = s; bestStrategy = 'participant_email'; }
+          break;
+        }
+      }
+    }
+
+    // Strategy 3: Participant name
+    for (const a of attendees) {
+      if (a.name === q && bestScore < 80) { bestScore = 80; bestStrategy = 'participant_name'; break; }
+      if (wordRe.test(a.name) && bestScore < 65) { bestScore = 65; bestStrategy = 'participant_name'; break; }
+      if (a.name.includes(q) && bestScore < 50) { bestScore = 50; bestStrategy = 'participant_name'; break; }
+    }
+
+    // Strategy 4: Title fuzzy match
+    const nt = (n.title || '').toLowerCase();
+    if (nt === q && bestScore < 100) { bestScore = 100; bestStrategy = 'title_fuzzy'; }
+    else if (wordRe.test(n.title || '') && bestScore < 80) { bestScore = 80; bestStrategy = 'title_fuzzy'; }
+    else if (nt.includes(q) && bestScore < 40) { bestScore = 40; bestStrategy = 'title_fuzzy'; }
+
+    if (bestScore > 0) {
+      scored.push({ note: n, match_score: bestScore, match_strategy: bestStrategy });
+    }
+  }
+
+  // Strategy 5: Recent window fallback
+  if (scored.length === 0 && notes.length > 0) {
+    const fourteenDaysAgo = Date.now() - 14 * 86400000;
+    const recent = notes.filter(n => new Date(n.created_at).getTime() >= fourteenDaysAgo);
+    if (recent.length > 0) {
+      scored.push({ note: recent[0], match_score: 20, match_strategy: 'recent_window' });
+    }
+  }
+
+  scored.sort((a, b) => b.match_score - a.match_score);
+  return scored;
 }
 
 /**

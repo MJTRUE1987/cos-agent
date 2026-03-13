@@ -89,7 +89,7 @@ export default async function handler(req, res) {
         // Search recent notes for a match (by company name or recent)
         const params = new URLSearchParams({ page_size: '30' });
         // Look at notes from last 7 days
-        const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+        const weekAgo = new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0];
         params.set('created_after', weekAgo);
 
         const listRes = await fetch(`${GRANOLA_BASE}/v1/notes?${params}`, { headers });
@@ -97,26 +97,38 @@ export default async function handler(req, res) {
           const listData = await listRes.json();
           const notes = listData.notes || [];
 
-          // Find best match
+          // Find best match using scored matching (word-boundary > substring)
           let match = null;
           if (company) {
             const q = company.toLowerCase();
-            match = notes.find(n =>
-              (n.title || '').toLowerCase().includes(q) ||
-              (n.attendees || []).some(a =>
-                (a.name || '').toLowerCase().includes(q) ||
-                (a.email || '').toLowerCase().includes(q)
-              ) ||
-              // Also check calendar event title and attendees
-              (n.calendar_event?.title || '').toLowerCase().includes(q) ||
-              (n.calendar_event?.attendees || []).some(a =>
-                (a.name || '').toLowerCase().includes(q) ||
-                (a.email || '').toLowerCase().includes(q)
-              )
-            );
+            const qEsc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const wordRe = new RegExp(`(?:^|\\W)${qEsc}(?:$|\\W)`, 'i');
+
+            let bestScore = 0;
+            for (const n of notes) {
+              const fields = [
+                n.title || '',
+                ...(n.attendees || []).map(a => a.name || ''),
+                ...(n.attendees || []).map(a => a.email || ''),
+                n.calendar_event?.title || '',
+                ...(n.calendar_event?.attendees || []).map(a => a.name || ''),
+                ...(n.calendar_event?.attendees || []).map(a => a.email || ''),
+              ];
+              let score = 0;
+              for (const f of fields) {
+                const fl = f.toLowerCase();
+                if (fl === q) { score = 100; break; }
+                if (wordRe.test(f) && score < 80) score = 80;
+                else if (fl.includes(q) && score < 40) score = 40;
+              }
+              if (score > bestScore) {
+                bestScore = score;
+                match = n;
+              }
+            }
           }
-          // If no company match, get the most recent note
-          if (!match && notes.length > 0) {
+          // Only fall back to most recent if no company filter was provided
+          if (!match && !company && notes.length > 0) {
             match = notes[0];
           }
 

@@ -960,10 +960,10 @@
     },
     {
       "name": "ARMRA",
-      "amount": null,
-      "stage": "Disco Complete",
-      "owner": "Jason",
-      "close": "",
+      "amount": 150000,
+      "stage": "Negotiating",
+      "owner": "Mike",
+      "close": "2026-04-08",
       "id": "38149636159"
     },
     {
