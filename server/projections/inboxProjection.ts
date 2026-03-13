@@ -46,49 +46,11 @@ export interface InboxView {
 // ── Gmail Query Filters ──────────────────────────────────────────────
 // Superhuman-style "Important" inbox: Primary + Important, strict exclusions
 
-const IMPORTANT_INBOX_QUERY = [
-  // Base: important or primary category only
-  '(category:primary OR is:important)',
-  // Exclude promotional/social/updates/forums categories
-  '-category:promotions',
-  '-category:social',
-  '-category:updates',
-  '-category:forums',
-  // Exclude automated/noreply senders
-  '-from:noreply',
-  '-from:no-reply',
-  '-from:do-not-reply',
-  '-from:donotreply',
-  '-from:notifications@',
-  '-from:notification@',
-  '-from:mailer-daemon',
-  '-from:calendar-notification',
-  '-from:reply@',
-  // Exclude known noise senders
-  '-from:billing@',
-  '-from:invoices@',
-  '-from:receipts@',
-  '-from:support@hubspot.com',
-  '-from:@docusign.net',
-  '-from:dse@docusign.net',
-  '-from:@vercel.com',
-  '-from:@statuspage.io',
-  '-from:calendar-server@google.com',
-  // Known noise senders from production
-  '-from:@brex.com',
-  '-from:@justworks.com',
-  '-from:@vitally.io',
-  '-from:@goingvc.com',
-  '-from:@gusto.com',
-  '-from:@rippling.com',
-  '-from:@stripe.com',
-  '-from:@intercom.io',
-  '-from:@linear.app',
-  '-from:@substack.com',
-  // Exclude labels
-  '-label:promotions',
-  '-label:social',
-].join(' ');
+// Superhuman "Important" inbox = Gmail is:important.
+// Superhuman does NOT have a public API. Its Important/Other split
+// is powered entirely by Gmail's is:important flag.
+// This query replicates Superhuman's Important folder exactly.
+const IMPORTANT_INBOX_QUERY = 'is:important';
 
 // ── Sender Noise Lists ────────────────────────────────────────────
 // Post-query server-side filtering for things Gmail query can't catch

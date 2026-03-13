@@ -203,7 +203,7 @@ function buildPostCallPlan(planId: string, intent: CommandIntent): PlanStep[] {
 function buildInboxTriagePlan(planId: string, intent: CommandIntent): PlanStep[] {
   return [
     makeStep(planId, 1, 'gmail.search_threads', 'Search for important emails needing reply', {
-      query: `is:inbox is:unread newer_than:1d (category:primary OR is:important) -category:promotions -category:social -category:updates -category:forums -from:noreply -from:no-reply -from:do-not-reply -from:donotreply -from:notifications@ -from:mailer-daemon -from:calendar-notification -from:billing@ -from:invoices@ -from:receipts@ -from:support@hubspot.com -from:billing@hubspot.com -from:@docusign.net -from:@vercel.com -from:@statuspage.io -from:calendar-server@google.com -from:@brex.com -from:@justworks.com -from:@vitally.io -from:@goingvc.com -from:@stripe.com -from:@intercom.io -from:@linear.app`,
+      query: 'is:inbox is:unread newer_than:1d is:important',
       max_results: 30,
     }),
   ];
@@ -227,7 +227,7 @@ function buildDailyBriefPlan(planId: string, intent: CommandIntent): PlanStep[] 
   });
 
   const emailStep = makeStep(planId, 3, 'gmail.search_threads', 'Check important inbox threads needing reply', {
-    query: `is:inbox is:unread after:${today} (category:primary OR is:important) -category:promotions -category:social -category:updates -category:forums -from:noreply -from:no-reply -from:do-not-reply -from:notifications@ -from:mailer-daemon -from:billing@ -from:invoices@ -from:support@hubspot.com -from:billing@hubspot.com -from:@docusign.net -from:@vercel.com -from:calendar-server@google.com -from:@brex.com -from:@justworks.com -from:@vitally.io -from:@goingvc.com -from:@stripe.com -from:@intercom.io`,
+    query: `is:inbox is:unread after:${today} is:important`,
     max_results: 15,
   });
 
@@ -275,7 +275,7 @@ function buildMeetingPrepPlan(planId: string, intent: CommandIntent): PlanStep[]
   });
 
   const emailStep = makeStep(planId, 2, 'gmail.search_threads', 'Find recent important emails from meeting attendees', {
-    query: 'is:inbox newer_than:7d (category:primary OR is:important) -category:promotions -category:social -category:updates -category:forums -from:noreply -from:no-reply -from:billing@ -from:invoices@ -from:@docusign.net -from:@vercel.com -from:@brex.com -from:@justworks.com -from:@vitally.io -from:@stripe.com',
+    query: 'is:inbox newer_than:7d is:important',
     max_results: 20,
   });
 

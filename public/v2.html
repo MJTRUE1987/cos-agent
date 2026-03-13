@@ -323,7 +323,7 @@
       <div class="dot" style="background:#3b82f6"></div> Pipeline
     </div>
     <div class="nav-item" data-view="inbox" onclick="switchView('inbox')">
-      <div class="dot" style="background:#f59e0b"></div> Inbox
+      <div class="dot" style="background:#f59e0b"></div> Important
       <span class="count" id="inboxCount">-</span>
     </div>
     <div class="nav-item" data-view="calendar" onclick="switchView('calendar')">
@@ -1462,12 +1462,11 @@ function renderInboxView(data) {
   const filtered = data.total_filtered_out || 0;
   let html = `
     <div style="margin-bottom:20px">
-      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Important Inbox</h1>
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Important</h1>
       <div style="font-size:12px;color:#64748b">
-        Live from Gmail &middot; ${data.total_unread || 0} important &middot; ${data.needs_reply || 0} need reply &middot; ${data.agent_drafted || 0} drafts
-        ${filtered > 0 ? ` &middot; <span style="color:#475569">${filtered} noise filtered out</span>` : ''}
+        Superhuman Important &middot; ${data.total_unread || 0} threads &middot; ${data.needs_reply || 0} need reply &middot; ${data.agent_drafted || 0} drafts
+        ${filtered > 0 ? ` &middot; <span style="color:#475569">${filtered} noise filtered</span>` : ''}
       </div>
-      <div style="font-size:10px;color:#334155;margin-top:4px">Showing: Primary + Important only &middot; Billing, newsletters, system alerts hidden</div>
     </div>`;
 
   if (!(data.threads || []).length) {
