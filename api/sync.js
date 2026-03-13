@@ -407,7 +407,10 @@ async function syncHubSpot(sinceDate, summary, fullSync = false) {
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   // Owner mapping
-  const OWNERS = { '151853665': 'Mike', '82490290': 'Brian', '743878021': 'Will', '1003618676': 'Jason', '84289936': 'Michael O', '82544484': 'Jason N' };
+  // Owner remapping: Laura Nelson (927267605) and her reassigned deals (1003618676) → Brian
+  const OWNER_REMAP = { '927267605': '82490290', '1003618676': '82490290' };
+  const OWNERS = { '151853665': 'Mike', '82490290': 'Brian', '743878021': 'Will', '84289936': 'Michael O', '82544484': 'Jason N' };
+  const resolveOwner = (id) => OWNERS[OWNER_REMAP[id] || id] || '';
 
   const STAGE_MAP = {
     '93124525': 'Disco Booked', '998751160': 'Disco Complete', 'appointmentscheduled': 'Demo Scheduled',
@@ -467,7 +470,7 @@ async function syncHubSpot(sinceDate, summary, fullSync = false) {
       stage: STAGE_MAP[d.properties.dealstage] || d.properties.dealstage || '',
       amount: d.properties.amount ? parseFloat(d.properties.amount) : null,
       close: d.properties.closedate || null,
-      owner: OWNERS[d.properties.hubspot_owner_id] || null,
+      owner: resolveOwner(d.properties.hubspot_owner_id) || null,
       _syncSource: 'hubspot',
     }));
 

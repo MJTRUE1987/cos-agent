@@ -436,7 +436,10 @@ function saveApiKey() {
 // XSS protection for innerHTML contexts
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-const OWNERS = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", "1003618676": "Jason", "84289936": "Michael O", "82544484": "Jason N" };
+// Owner remapping: Laura Nelson (927267605) and reassigned deals (1003618676) → Brian
+const OWNER_REMAP = { "927267605": "82490290", "1003618676": "82490290" };
+const OWNERS_RAW = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", "84289936": "Michael O", "82544484": "Jason N" };
+const OWNERS = new Proxy(OWNERS_RAW, { get: (t, k) => t[OWNER_REMAP[k] || k] || '' });
 const OWNER_CLASS = { "Mike": "owner-mike", "Brian": "owner-brian", "Will": "owner-will" };
 const TODAY = new Date();
 

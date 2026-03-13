@@ -850,7 +850,7 @@
       "name": "Brooklinen",
       "amount": 124875,
       "stage": "Negotiating",
-      "owner": "Jason",
+      "owner": "Brian",
       "close": "2026-03-29",
       "id": "35479873384"
     },
@@ -882,7 +882,7 @@
       "name": "LMNT",
       "amount": 120000,
       "stage": "Negotiating",
-      "owner": "Jason",
+      "owner": "Brian",
       "close": "2026-03-31",
       "id": "29910518574"
     },
@@ -1014,7 +1014,7 @@
       "84289936": "Michael O",
       "151853665": "Mike",
       "743878021": "Will",
-      "1003618676": "Jason"
+      "1003618676": "Brian"
     },
     "ownerClass": {
       "Mike": "owner-mike",
