@@ -1,14 +1,14 @@
 /**
- * Inbox Projection — Builds an "Important Inbox" from real Gmail data.
+ * Inbox Projection — Mirrors Superhuman "Important" inbox exactly.
  *
- * Emulates Superhuman Important behavior using Gmail Important + Primary.
+ * Superhuman's Important/Other split is powered entirely by Gmail's
+ * `is:important` flag. There is no public Superhuman API.
  *
  * Rules:
- * - Real Gmail threads only — no fallbacks, no demo data
- * - Strict noise suppression: billing, DocuSign, newsletters, alerts,
- *   receipts, system messages, noreply senders, event invites — all excluded
- * - Only surfaces real human business conversations
- * - Bias toward under-including rather than over-including
+ * - Query Gmail for `is:important` — that's it
+ * - NO server-side noise filtering — if Gmail says important, show it
+ * - Show read AND unread (Superhuman Important shows both)
+ * - Group by date (Today, Yesterday, date)
  * - If Gmail fails, throws with source attribution
  */
 
@@ -24,122 +24,23 @@ export interface InboxThread {
   date: string;
   snippet: string;
   is_unread: boolean;
-  priority: 'high' | 'medium' | 'low';
-  priority_reason?: string;
+  is_draft: boolean;
+  draft_to?: string;
+  date_group: string;  // "Today", "Yesterday", "Mar 11"
   reply_needed: boolean;
   agent_status: 'none' | 'draft_created' | 'replied' | 'triaged';
-  classification: 'important_human' | 'transactional' | 'promotional' | 'system' | 'calendar_notification' | 'low_signal_noise';
-  why_it_matters?: string;
 }
 
 export interface InboxView {
   threads: InboxThread[];
+  total_count: number;
   total_unread: number;
   needs_reply: number;
   agent_drafted: number;
-  total_filtered_out: number;
   generated_at: string;
   source: 'gmail';
-  mode: 'important' | 'all';
+  mode: 'important';
 }
-
-// ── Gmail Query Filters ──────────────────────────────────────────────
-// Superhuman-style "Important" inbox: Primary + Important, strict exclusions
-
-// Superhuman "Important" inbox = Gmail is:important.
-// Superhuman does NOT have a public API. Its Important/Other split
-// is powered entirely by Gmail's is:important flag.
-// This query replicates Superhuman's Important folder exactly.
-const IMPORTANT_INBOX_QUERY = 'is:important';
-
-// ── Sender Noise Lists ────────────────────────────────────────────
-// Post-query server-side filtering for things Gmail query can't catch
-
-const NOISE_SENDER_PATTERNS = [
-  // Automated / system senders
-  'noreply', 'no-reply', 'do-not-reply', 'donotreply',
-  'notifications@', 'notification@', 'alerts@', 'alert@',
-  'mailer-daemon', 'postmaster@',
-  'calendar-notification', 'calendar-server',
-  // Billing / transactional
-  'billing@', 'invoices@', 'invoice@', 'receipts@', 'receipt@',
-  'payments@', 'payment@', 'accounts@', 'accounting@',
-  'support@',
-  // DocuSign
-  'docusign.net', 'dse@docusign', 'docusign.com',
-  // Specific SaaS/billing senders seen in production
-  '@brex.com', 'brex.com',
-  '@justworks.com', 'justworks.com',
-  '@vitally.io', 'vitally.io',
-  '@goingvc.com', 'goingvc.com',
-  '@gusto.com', 'gusto.com',
-  '@rippling.com', 'rippling.com',
-  '@expensify.com',
-  '@bill.com',
-  '@ramp.com',
-  // Product / marketing
-  '@vercel.com', 'vercel.email',
-  '@hubspot.com',
-  '@intercom.io', 'intercom-mail',
-  '@notion.so',
-  '@linear.app',
-  '@slack.com',
-  '@figma.com',
-  '@stripe.com',
-  '@sendgrid.net',
-  '@mailchimp.com', '@mail.mailchimp.com',
-  '@createsend.com',
-  '@substack.com',
-  '@beehiiv.com',
-  '@convertkit.com',
-  'marketing@', 'newsletter@', 'news@', 'updates@', 'digest@',
-  'hello@',  // often marketing
-  'team@',   // often product updates
-  'info@',   // often automated
-  // Event platforms
-  'invites.', '.eventbrite.', 'clubexpress',
-  'calendly.com', 'calend.ly',
-  'zoom.us', '@zoom.us',
-  '@luma.com', '@lu.ma',
-  // Status pages
-  '-status.com', 'statuspage',
-  // Social media notifications
-  '@facebookmail.com', '@linkedin.com', '@twitter.com', '@x.com',
-];
-
-const NOISE_SUBJECT_PATTERNS = [
-  // Newsletters / digests
-  'newsletter', 'digest', 'weekly update', 'weekly recap', 'monthly update',
-  'daily digest', 'weekly digest', 'your weekly', 'your monthly',
-  'weekly roundup', 'weekly summary', 'daily summary',
-  'what you need to know',
-  // Billing / receipts / financial
-  'invoice', 'receipt', 'payment confirmed', 'payment received',
-  'billing statement', 'subscription renewed', 'subscription confirmation',
-  'your bill', 'payment due', 'amount due', 'billing notice',
-  'payment reminder', 'upcoming charge',
-  'card bill', 'credit memo', 'credit card statement',
-  'contacts tier', 'contact tier', 'plan limit', 'usage limit',
-  'been upgraded to the next', 'upgraded to the next',
-  // HR / internal ops
-  'requested time off', 'time off request', 'pto request', 'out of office',
-  // DocuSign
-  'docusign', 'please sign', 'completed: please review',
-  'viewed complete with docusign',
-  // Product announcements
-  'product update', 'new feature', 'feature update', 'release notes',
-  'what\'s new', 'whats new', 'changelog', 'just shipped',
-  'welcome to', 'getting started with',
-  'resources to kickstart',
-  // Event/calendar
-  'invitation:', 'accepted:', 'declined:', 'tentative:',
-  'rsvp', 'event reminder',
-  // System notifications
-  'security alert', 'sign-in attempt', 'password reset',
-  'verify your email', 'confirm your email', 'activate your account',
-  // Unsubscribe indicators (strong newsletter signal)
-  'unsubscribe',
-];
 
 // My email domains (used to detect "last sender was me" = awaiting their reply)
 const MY_DOMAINS = ['prescientai.com', 'prescient-ai.io', 'prescient.ai'];
@@ -152,11 +53,13 @@ export async function buildInboxProjection(query?: string): Promise<InboxView> {
     throw new IntegrationError('gmail', 'Gmail tool not available — check GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN');
   }
 
-  const gmailQuery = query || `is:inbox is:unread ${IMPORTANT_INBOX_QUERY}`;
+  // Superhuman Important = Gmail is:important. That's it.
+  // No is:unread — Superhuman shows read AND unread in Important.
+  const gmailQuery = query || 'is:important';
 
   const result = await searchTool.execute({
     query: gmailQuery,
-    max_results: 50,   // fetch more, filter aggressively
+    max_results: 30,
   }, {
     command_id: 'projection',
     execution_run_id: 'projection',
@@ -180,27 +83,21 @@ export async function buildInboxProjection(query?: string): Promise<InboxView> {
     }
   }
 
-  // Classify every thread, then filter
-  let filteredOutCount = 0;
+  const now = new Date();
   const threads: InboxThread[] = [];
 
   for (const t of rawThreads) {
     const fromParsed = parseFrom(t.from || '');
     const lastSenderIsMe = isMe(fromParsed.email);
-    const classification = classifyEmail(t, fromParsed);
 
-    // Only include important_human by default
-    if (classification !== 'important_human') {
-      filteredOutCount++;
-      continue;
-    }
+    // Detect drafts (Superhuman shows "Draft to Name, ID")
+    const isDraft = (t.labels || []).includes('DRAFT') || (t.subject || '').toLowerCase().startsWith('draft');
 
     let agentStatus: InboxThread['agent_status'] = 'none';
     if (draftedThreads.has(t.thread_id)) agentStatus = 'draft_created';
 
-    const { level, reason } = classifyPriority(t, fromParsed, lastSenderIsMe);
-    const replyNeeded = !lastSenderIsMe && level !== 'low' && agentStatus === 'none';
-    const whyItMatters = buildWhyItMatters(t, fromParsed, level, reason);
+    const replyNeeded = !lastSenderIsMe && t.unread !== false && agentStatus === 'none';
+    const dateGroup = getDateGroup(t.date, now);
 
     threads.push({
       thread_id: t.thread_id || t.id,
@@ -210,226 +107,47 @@ export async function buildInboxProjection(query?: string): Promise<InboxView> {
       date: t.date || '',
       snippet: t.snippet || '',
       is_unread: t.unread !== false,
-      priority: level,
-      priority_reason: reason,
+      is_draft: isDraft,
+      draft_to: isDraft ? fromParsed.name : undefined,
+      date_group: dateGroup,
       reply_needed: replyNeeded,
       agent_status: agentStatus,
-      classification,
-      why_it_matters: whyItMatters,
     });
   }
 
-  // Sort: reply-needed first, then high > medium > low, then by date
-  threads.sort((a, b) => {
-    if (a.reply_needed !== b.reply_needed) return a.reply_needed ? -1 : 1;
-    const pOrder = { high: 0, medium: 1, low: 2 };
-    const pDiff = pOrder[a.priority] - pOrder[b.priority];
-    if (pDiff !== 0) return pDiff;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
-  });
+  // Sort by date descending (newest first) — Superhuman default
+  threads.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return {
     threads,
+    total_count: threads.length,
     total_unread: threads.filter(t => t.is_unread).length,
     needs_reply: threads.filter(t => t.reply_needed).length,
     agent_drafted: threads.filter(t => t.agent_status === 'draft_created').length,
-    total_filtered_out: filteredOutCount,
     generated_at: new Date().toISOString(),
     source: 'gmail',
     mode: 'important',
   };
 }
 
-// ── Email Classification (Noise Suppression Layer) ───────────────────
+// ── Date Grouping ────────────────────────────────────────────────────
 
-function classifyEmail(
-  thread: any,
-  fromParsed: { name: string; email: string }
-): InboxThread['classification'] {
-  const from = (thread.from || '').toLowerCase();
-  const fromEmail = fromParsed.email.toLowerCase();
-  const subject = (thread.subject || '').toLowerCase();
-  const snippet = (thread.snippet || '').toLowerCase();
+function getDateGroup(dateStr: string, now: Date): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
 
-  // Calendar notifications
-  if (
-    from.includes('calendar-notification') ||
-    from.includes('calendar-server') ||
-    subject.match(/^(invitation|accepted|declined|tentative):/) ||
-    (from.includes('calendar') && subject.includes('event'))
-  ) {
-    return 'calendar_notification';
-  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const threadDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  // System / automated senders — check sender patterns
-  const isNoiseSender = NOISE_SENDER_PATTERNS.some(pattern => {
-    if (pattern.startsWith('@')) return fromEmail.includes(pattern);
-    return from.includes(pattern) || fromEmail.includes(pattern);
-  });
+  if (threadDay.getTime() === today.getTime()) return 'Today';
+  if (threadDay.getTime() === yesterday.getTime()) return 'Yesterday';
 
-  if (isNoiseSender) {
-    // ALWAYS block billing/transactional senders — even in reply chains
-    const isBillingSender = from.includes('billing') || from.includes('invoice') || from.includes('receipt') || from.includes('payment');
-    const isDocuSign = from.includes('docusign');
-    const isMarketingSender = from.includes('marketing') || from.includes('newsletter') || from.includes('news@') || from.includes('promo');
-
-    if (isBillingSender || subject.includes('invoice') || subject.includes('billing') || subject.includes('credit memo') || subject.includes('payment')) {
-      return 'transactional';
-    }
-    if (isDocuSign || subject.includes('docusign')) {
-      return 'transactional';
-    }
-    if (isMarketingSender) {
-      return 'promotional';
-    }
-
-    // For non-transactional noise senders: allow genuine reply chains through
-    // (e.g., a real person at a SaaS company replying to you in a thread)
-    // But NOT if it's clearly automated
-    if (subject.startsWith('re:') && !isDefinitelyAutomated(from, subject) && !isSubjectNoise(subject)) {
-      return 'important_human';
-    }
-
-    return 'system';
-  }
-
-  // Subject-based noise detection
-  const isNoiseSubject = NOISE_SUBJECT_PATTERNS.some(pattern => {
-    // "unsubscribe" only counts if not in a reply chain
-    if (pattern === 'unsubscribe') {
-      return subject.includes(pattern) && !subject.startsWith('re:');
-    }
-    return subject.includes(pattern);
-  });
-
-  if (isNoiseSubject) {
-    // DocuSign
-    if (subject.includes('docusign') || subject.includes('please sign')) {
-      return 'transactional';
-    }
-    // Billing
-    if (subject.match(/\b(invoice|receipt|billing|payment|subscription|charge|bill)\b/)) {
-      return 'transactional';
-    }
-    // Newsletter / marketing
-    if (subject.match(/\b(newsletter|digest|weekly update|monthly update|what'?s new|product update|welcome to|getting started)\b/)) {
-      return 'promotional';
-    }
-    // Calendar
-    if (subject.match(/^(invitation|accepted|declined|tentative|rsvp|event reminder)/i)) {
-      return 'calendar_notification';
-    }
-    // System
-    if (subject.match(/\b(security alert|password reset|verify your|confirm your|activate your)\b/)) {
-      return 'system';
-    }
-    return 'low_signal_noise';
-  }
-
-  // Snippet-based noise check (catches things subject/sender miss)
-  if (snippet.includes('unsubscribe') && !subject.startsWith('re:')) {
-    return 'promotional';
-  }
-
-  // If we got here, it's a real human email
-  return 'important_human';
-}
-
-function isDefinitelyAutomated(from: string, subject: string): boolean {
-  return (
-    from.includes('noreply') ||
-    from.includes('no-reply') ||
-    from.includes('do-not-reply') ||
-    from.includes('donotreply') ||
-    from.includes('mailer-daemon') ||
-    subject.includes('unsubscribe') ||
-    subject.match(/^(invitation|accepted|declined):/) !== null
-  );
-}
-
-function isSubjectNoise(subject: string): boolean {
-  return NOISE_SUBJECT_PATTERNS.some(pattern => {
-    if (pattern === 'unsubscribe') return false; // handled elsewhere
-    // For re: chains, strip the "re: " prefix and check the underlying subject
-    const stripped = subject.replace(/^re:\s*/i, '');
-    return stripped.includes(pattern);
-  });
-}
-
-// ── Priority Classification ──────────────────────────────────────────
-
-function classifyPriority(
-  thread: any,
-  fromParsed: { name: string; email: string },
-  lastSenderIsMe: boolean
-): { level: 'high' | 'medium' | 'low'; reason?: string } {
-  const subject = (thread.subject || '').toLowerCase();
-  const from = (thread.from || '').toLowerCase();
-  const snippet = (thread.snippet || '').toLowerCase();
-
-  // If I was the last sender, lower priority (awaiting their reply)
-  if (lastSenderIsMe) {
-    return { level: 'low', reason: 'Awaiting their reply' };
-  }
-
-  // HIGH: deal documents, urgent, introductions, active deal signals
-  if (subject.includes('urgent') || subject.includes('asap') || subject.includes('time sensitive')) {
-    return { level: 'high', reason: 'Marked urgent' };
-  }
-  if (subject.match(/\b(contract|order form|sow|agreement|msa|nda)\b/)) {
-    return { level: 'high', reason: 'Deal document' };
-  }
-  if (subject.includes('proposal') && !subject.includes('newsletter')) {
-    return { level: 'high', reason: 'Proposal' };
-  }
-  if (subject.match(/\b(intro|introduction|connecting)\b/) || subject.includes('meet ')) {
-    return { level: 'high', reason: 'Introduction' };
-  }
-  if (snippet.match(/\b(can we schedule|are you free|available for|let'?s set up|find a time)\b/)) {
-    return { level: 'high', reason: 'Scheduling request' };
-  }
-  if (snippet.match(/\b(pricing|quote|discount|budget|cost)\b/) && subject.startsWith('re:')) {
-    return { level: 'high', reason: 'Pricing discussion' };
-  }
-  if (snippet.match(/\b(close|closing|sign|signed|ready to move|ready to go)\b/) && subject.startsWith('re:')) {
-    return { level: 'high', reason: 'Close signal' };
-  }
-
-  // MEDIUM: replies, active threads, human conversations
-  if (subject.startsWith('re:')) {
-    return { level: 'medium', reason: 'Active thread' };
-  }
-  if (subject.startsWith('fwd:')) {
-    return { level: 'medium', reason: 'Forwarded' };
-  }
-
-  // Default for human email that passed all filters
-  return { level: 'medium', reason: 'New message' };
-}
-
-// ── Why It Matters ───────────────────────────────────────────────────
-
-function buildWhyItMatters(
-  thread: any,
-  fromParsed: { name: string; email: string },
-  level: string,
-  reason?: string
-): string {
-  const subject = (thread.subject || '').toLowerCase();
-  const snippet = (thread.snippet || '').toLowerCase();
-
-  if (level === 'high') {
-    if (reason === 'Deal document') return 'Contains deal documentation that likely needs review/signature';
-    if (reason === 'Introduction') return 'New introduction — respond within 24h';
-    if (reason === 'Scheduling request') return 'Someone is trying to book time with you';
-    if (reason === 'Pricing discussion') return 'Active pricing conversation — revenue impact';
-    if (reason === 'Close signal') return 'Deal may be ready to close — high priority';
-    if (reason === 'Marked urgent') return 'Sender flagged this as urgent';
-    if (reason === 'Proposal') return 'Proposal in progress — respond to keep momentum';
-  }
-
-  if (subject.startsWith('re:')) return 'Active conversation — someone replied to you';
-  return '';
+  // "Mar 11", "Mar 10", etc.
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getMonth()]} ${date.getDate()}`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
