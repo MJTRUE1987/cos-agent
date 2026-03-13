@@ -75,6 +75,7 @@ export const gmailSearchThreads: ToolAdapter = {
 
       const threads = details.filter(Boolean).map((msg: any) => {
         const getHeader = (name: string) => (msg.payload?.headers || []).find((h: any) => h.name === name)?.value || '';
+        const labels: string[] = msg.labelIds || [];
         return {
           thread_id: msg.threadId,
           message_id: msg.id,
@@ -83,18 +84,30 @@ export const gmailSearchThreads: ToolAdapter = {
           to: getHeader('To'),
           date: getHeader('Date'),
           snippet: msg.snippet || '',
+          unread: labels.includes('UNREAD'),
+          labels,
           last_message_at: getHeader('Date'),
           last_message_from: getHeader('From'),
         };
       });
 
-      // Dedupe by thread_id
-      const seen = new Set<string>();
-      const uniqueThreads = threads.filter((t: any) => {
-        if (seen.has(t.thread_id)) return false;
-        seen.add(t.thread_id);
-        return true;
-      });
+      // Dedupe by thread_id — keep most recent message per thread,
+      // but mark thread as unread if ANY message in thread is unread
+      const threadMap = new Map<string, any>();
+      for (const t of threads) {
+        const existing = threadMap.get(t.thread_id);
+        if (!existing) {
+          threadMap.set(t.thread_id, t);
+        } else {
+          // Merge: keep the first (most recent) but propagate unread
+          if (t.unread) existing.unread = true;
+          // Merge labels
+          if (t.labels?.includes('DRAFT') && !existing.labels.includes('DRAFT')) {
+            existing.labels.push('DRAFT');
+          }
+        }
+      }
+      const uniqueThreads = Array.from(threadMap.values());
 
       return {
         success: true,
