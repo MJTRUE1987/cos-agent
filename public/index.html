@@ -440,6 +440,40 @@ const OWNERS = { "151853665": "Mike", "82490290": "Brian", "743878021": "Will", 
 const OWNER_CLASS = { "Mike": "owner-mike", "Brian": "owner-brian", "Will": "owner-will" };
 const TODAY = new Date();
 
+// Parse meeting date string (e.g. "Tue 3/10 · 6:00am") into a Date object
+// Returns null if unparseable
+function parseMeetingDate(m) {
+  if (m.calendarEvent?.start) return new Date(m.calendarEvent.start);
+  if (!m.date) return null;
+  const dm = m.date.match(/(\d{1,2})\/(\d{1,2})/);
+  if (!dm) return null;
+  const month = parseInt(dm[1]) - 1;
+  const day = parseInt(dm[2]);
+  const year = TODAY.getFullYear();
+  const tm = m.date.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  let h = 0, min = 0;
+  if (tm) {
+    h = parseInt(tm[1]);
+    min = parseInt(tm[2]);
+    if (tm[3].toLowerCase() === 'pm' && h !== 12) h += 12;
+    if (tm[3].toLowerCase() === 'am' && h === 12) h = 0;
+  }
+  return new Date(year, month, day, h, min, 0, 0);
+}
+
+// Filter and sort meetings: only future, non-canceled
+function getUpcomingMeetings() {
+  const now = new Date();
+  return MEETINGS
+    .filter(m => {
+      if (m.status === 'canceled' || m.status === 'cancelled') return false;
+      const dt = parseMeetingDate(m);
+      if (dt) return dt > now;
+      return false; // exclude unparseable — don't show stale
+    })
+    .sort((a, b) => (parseMeetingDate(a) || 0) - (parseMeetingDate(b) || 0));
+}
+
 const STAGE_MAP = {
   "93124525": "Disco Booked", "998751160": "Disco Complete", "appointmentscheduled": "Demo Scheduled",
   "123162712": "Demo Completed", "decisionmakerboughtin": "Negotiating", "227588384": "Committed",
@@ -1147,10 +1181,16 @@ async function syncInBackground() {
     if (data.summary?.errors?.length) {
       data.summary.errors.forEach(e => addFeedItem('error', e, null));
     }
+    _lastSyncSuccess = true;
+    _initialLoadComplete = true;
+    updateAutoSyncLabel();
   } catch (err) {
     console.error('Sync error:', err);
     if (indicator) indicator.innerHTML = '<span style="color:#ef4444;">Sync failed</span>';
     addFeedItem('error', 'Sync failed — ' + (err.message || 'unknown error'), null);
+    _lastSyncSuccess = false;
+    _initialLoadComplete = true; // still mark complete so future signals emit
+    updateAutoSyncLabel();
   } finally {
     _syncing = false;
   }
@@ -1159,12 +1199,31 @@ async function syncInBackground() {
 function updateSyncIndicator() {
   const indicator = document.getElementById("syncIndicator");
   if (!indicator) return;
-  if (_lastSyncedAt) {
+  if (_syncing) {
+    indicator.innerHTML = '<span style="color:#f59e0b;">⟳ Syncing now...</span>';
+  } else if (_lastSyncedAt) {
     const mins = Math.floor((Date.now() - new Date(_lastSyncedAt).getTime()) / 60000);
     const label = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.floor(mins/60)}h ago`;
-    indicator.innerHTML = `<span style="color:#64748b;">Synced ${label}</span>`;
+    const statusColor = _lastSyncSuccess === false ? '#ef4444' : '#64748b';
+    const statusIcon = _lastSyncSuccess === false ? '⚠ ' : '';
+    indicator.innerHTML = `<span style="color:${statusColor};">${statusIcon}Synced ${label}</span>`;
   } else {
     indicator.innerHTML = '<span style="color:#475569;">Not synced</span>';
+  }
+}
+
+function updateAutoSyncLabel() {
+  const label = document.getElementById("autoSyncLabel");
+  if (!label) return;
+  if (_syncTimer && _lastSyncSuccess !== false) {
+    label.textContent = 'auto-syncing every 3m';
+    label.style.color = '#475569';
+  } else if (_lastSyncSuccess === false) {
+    label.textContent = 'sync failed — retrying';
+    label.style.color = '#ef4444';
+  } else {
+    label.textContent = 'sync inactive';
+    label.style.color = '#64748b';
   }
 }
 
@@ -1176,6 +1235,8 @@ let _syncTimer = null;
 let _feedItems = [];
 let _feedOpen = false;
 let _feedUnread = 0;
+let _initialLoadComplete = false; // suppress feed items until first sync completes
+let _lastSyncSuccess = null; // true/false/null for sync status display
 
 function startAutoSync() {
   if (_syncTimer) clearInterval(_syncTimer);
@@ -1185,6 +1246,72 @@ function startAutoSync() {
   }, SYNC_INTERVAL_MS);
   // Also keep the "synced X ago" label fresh
   setInterval(updateSyncIndicator, 30000);
+}
+
+// ═══════════════════════════════════════
+// MEETING DETAIL MODAL
+// ═══════════════════════════════════════
+// Stores upcoming meetings for click reference
+let _upcomingMeetingsCache = [];
+
+function showMeetingDetail(idx) {
+  const m = _upcomingMeetingsCache[idx];
+  if (!m) return;
+  const dt = parseMeetingDate(m);
+  const timeStr = dt ? dt.toLocaleString('en-US', { weekday:'long', month:'long', day:'numeric', hour:'numeric', minute:'2-digit' }) : (m.date || 'Unknown time');
+
+  const attendees = m.calendarEvent?.attendees
+    ? m.calendarEvent.attendees.map(a => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+        <span style="width:28px;height:28px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;flex-shrink:0;">${(a.name||a.email||'?').charAt(0).toUpperCase()}</span>
+        <span style="font-size:13px;color:#e2e8f0;">${esc(a.name || a.email)}</span>
+        ${a.company ? `<span style="font-size:11px;color:#64748b;">(${esc(a.company)})</span>` : ''}
+      </div>`).join('')
+    : (m.people ? `<div style="font-size:13px;color:#94a3b8;padding:4px 0;">${esc(m.people)}</div>` : '<div style="color:#64748b;font-size:12px;">No attendee info</div>');
+
+  const meetLink = m.calendarEvent?.hangoutLink || m.calendarEvent?.htmlLink || m.url || null;
+  const calLink = m.calendarEvent?.htmlLink || null;
+
+  const mtgAction = m.actionId != null ? ACTIONS.find(a => a.id === m.actionId) : null;
+
+  let overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'meetingDetailOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `<div class="modal" style="width:500px;">
+    <div class="modal-header">
+      <div class="modal-title">${m.external ? '🔴' : '📅'} ${esc(m.title)}</div>
+      <button class="modal-close" onclick="document.getElementById('meetingDetailOverlay').remove()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Time</div>
+        <div style="font-size:14px;color:#e2e8f0;">${esc(timeStr)}</div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px;">Attendees</div>
+        ${attendees}
+      </div>
+      ${m.summary ? `<div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Context</div>
+        <div style="font-size:13px;color:#94a3b8;line-height:1.5;">${m.summary}</div>
+      </div>` : ''}
+      ${m.action ? `<div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Status</div>
+        <div style="font-size:13px;color:#f59e0b;">⚡ ${esc(m.action)}</div>
+      </div>` : ''}
+      ${mtgAction?._signalState ? `<div style="margin-bottom:16px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Signal State</div>
+        <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;background:${getStateColor(mtgAction._signalState.canonicalState)}20;color:${getStateColor(mtgAction._signalState.canonicalState)};">${formatStateName(mtgAction._signalState.canonicalState)}</span>
+      </div>` : ''}
+    </div>
+    <div class="modal-footer">
+      ${meetLink ? `<button class="modal-btn-primary" onclick="window.open('${meetLink}','_blank')">Open Meeting Link</button>` : ''}
+      ${calLink && calLink !== meetLink ? `<button style="background:#1e293b;color:#94a3b8;" onclick="window.open('${calLink}','_blank')">Calendar Event</button>` : ''}
+      ${mtgAction ? `<button class="modal-btn-primary" style="background:#7c3aed;color:#e9d5ff;" onclick="document.getElementById('meetingDetailOverlay').remove();buildPrep(ACTIONS.find(a=>a.id===${mtgAction.id}))">🧠 Prep</button>` : ''}
+      <button style="background:#1e293b;color:#94a3b8;" onclick="document.getElementById('meetingDetailOverlay').remove()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
 }
 
 function toggleFeed() {
@@ -1231,6 +1358,8 @@ function addFeedItem(type, text, actionId) {
 
 // Emit signal-state-driven feed items after engine runs
 function emitSignalFeedItems(results) {
+  // Suppress on initial load — these are stale state computations, not real-time changes
+  if (!_initialLoadComplete) return;
   for (const [id, state] of results) {
     const action = ACTIONS.find(a => a.id === id);
     if (!action) continue;
@@ -4928,26 +5057,8 @@ function renderTodayView(main) {
   const done = getDone();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
   const now = new Date();
-  const upcomingMtgs = MEETINGS.filter(m => {
-    if (!m.upcoming) return false;
-    // Parse meeting date/time to filter out past meetings
-    if (m.calendarEvent?.start) {
-      return new Date(m.calendarEvent.start) > now;
-    }
-    // Fallback: check if date string contains today's date and a time
-    if (m.date) {
-      const match = m.date.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
-      if (match) {
-        let h = parseInt(match[1]);
-        const min = parseInt(match[2]);
-        if (match[3].toLowerCase() === 'pm' && h !== 12) h += 12;
-        if (match[3].toLowerCase() === 'am' && h === 12) h = 0;
-        const mtgTime = new Date(now); mtgTime.setHours(h, min, 0, 0);
-        return mtgTime > now;
-      }
-    }
-    return true; // keep if we can't parse time
-  });
+  const upcomingMtgs = getUpcomingMeetings();
+  _upcomingMeetingsCache = upcomingMtgs; // cache for click handler
   const inbound = open.filter(a => a.cat === "inbound");
   const replyNow = open.filter(a => a.cat !== "inbound" && a.cat !== "internal");
   const crmGaps = getCrmGaps();
@@ -4973,7 +5084,7 @@ function renderTodayView(main) {
         <div class="hero-stat"><span class="hero-stat-num green">${inbound.length}</span><span class="hero-stat-label">Inbound</span></div>
         <div class="hero-stat"><span class="hero-stat-num yellow">${upcomingMtgs.length}</span><span class="hero-stat-label">Meetings</span></div>
       </div>
-      ${upcomingMtgs.length > 0 ? `<div class="hero-next-mtg">
+      ${upcomingMtgs.length > 0 ? `<div class="hero-next-mtg" style="cursor:pointer;" onclick="showMeetingDetail(0)">
         <div class="dot"></div>
         <span>Next: <strong>${upcomingMtgs[0].title}</strong> — ${upcomingMtgs[0].date}</span>
       </div>` : ''}
@@ -5013,7 +5124,8 @@ function renderTodayView(main) {
         externalToday.forEach(m => {
           const isSel = m.actionId === selectedId;
           const mtgAction = ACTIONS.find(a => a.id === m.actionId);
-          html += `<div class="mtg-card${isSel?' selected':''}" style="border-color:#ef4444; border-left:3px solid #ef4444;" ${m.actionId != null ? `onclick="selectItem(${m.actionId})"` : ''}>
+          const mtgIdx = _upcomingMeetingsCache.indexOf(m);
+          html += `<div class="mtg-card${isSel?' selected':''}" style="border-color:#ef4444; border-left:3px solid #ef4444;cursor:pointer;" onclick="showMeetingDetail(${mtgIdx})">
             <div class="mtg-top">
               <span class="mtg-date">${m.date}</span>
               <span class="mtg-title">${m.title}</span>
@@ -5047,7 +5159,8 @@ function renderTodayView(main) {
       if (internalToday.length > 0) {
         html += `<div class="section-header" style="margin-top:16px;"><span class="section-icon">📅</span><span class="section-title">Internal — Today</span><span class="section-count">${internalToday.length}</span></div>`;
         internalToday.forEach(m => {
-          html += `<div class="mtg-card" style="border-color:#1e293b; opacity:0.75;">
+          const mtgIdx = _upcomingMeetingsCache.indexOf(m);
+          html += `<div class="mtg-card" style="border-color:#1e293b; opacity:0.75;cursor:pointer;" onclick="showMeetingDetail(${mtgIdx})">
             <div class="mtg-top">
               <span class="mtg-date" style="background:rgba(100,116,139,0.15); color:#94a3b8;">${m.date}</span>
               <span class="mtg-title" style="color:#94a3b8;">${m.title}</span>
@@ -5064,7 +5177,8 @@ function renderTodayView(main) {
         html += `<div class="section-header" style="margin-top:16px;"><span class="section-icon">📅</span><span class="section-title">Up Next — Later This Week</span><span class="section-count">${laterMtgs.length}</span></div>`;
         laterMtgs.forEach(m => {
           const isSel = m.actionId === selectedId;
-          html += `<div class="mtg-card${isSel?' selected':''}" ${m.actionId != null ? `onclick="selectItem(${m.actionId})"` : ''}>
+          const mtgIdx = _upcomingMeetingsCache.indexOf(m);
+          html += `<div class="mtg-card${isSel?' selected':''}" style="cursor:pointer;" onclick="showMeetingDetail(${mtgIdx})">
             <div class="mtg-top">
               <span class="mtg-date">${m.date}</span>
               <span class="mtg-title">${m.title}</span>
@@ -5717,11 +5831,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     return; // Don't load data until key is provided
   }
 
+  // Clear stale feed from previous session
+  _feedItems = [];
+  _feedUnread = 0;
+  const feedEl = document.getElementById('liveFeed');
+  if (feedEl) feedEl.innerHTML = '';
+  updateFeedCount();
+
   // Load data from API first
   await loadData();
-  runSignalEngine(); // Compute initial signal states
+  runSignalEngine(); // Compute initial signal states (feed suppressed until _initialLoadComplete)
   updateSyncIndicator();
-  syncInBackground(); // Initial sync
+  syncInBackground(); // Initial sync — this sets _initialLoadComplete = true
   startAutoSync(); // Auto-sync every 3 minutes
 
   const input = document.getElementById("chatInput");
@@ -5731,7 +5852,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const open = getOpen();
   const overdue = open.filter(a => daysStale(a.lastActivity) >= 5);
   const inboundCount = open.filter(a => a.cat === "inbound").length;
-  const upcoming = MEETINGS.filter(m => m.upcoming);
+  const upcoming = getUpcomingMeetings();
   const hour = new Date().getHours();
   const timeGreet = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
 
