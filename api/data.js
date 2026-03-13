@@ -58,15 +58,6 @@ export default async function handler(req, res) {
         metadata: metadata || {},
       };
 
-      // Auto-seed any missing KV keys from seed data
-      const toSeed = [];
-      if (!actions && seedData.actions) toSeed.push(kv.set('actions', seedData.actions));
-      if (!meetings && seedData.meetings) toSeed.push(kv.set('meetings', seedData.meetings));
-      if (!pipeline && seedData.pipeline) toSeed.push(kv.set('pipeline', seedData.pipeline));
-      if (toSeed.length > 0) {
-        Promise.all(toSeed).catch(err => console.error('[data] KV seed error:', err));
-      }
-
       return res.status(200).json(result);
     }
 

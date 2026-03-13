@@ -34,6 +34,11 @@ export default async function handler(req, res) {
 
   if (!company) return res.status(400).json({ error: 'company required' });
 
+  // SAFETY: Batch execution disabled — each step must be called individually
+  if (step === 'all') {
+    return res.status(400).json({ error: 'Batch execution (step=all) is disabled. Use individual steps: analyze, proposal, email, crm.' });
+  }
+
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
   const slackToken = process.env.SLACK_BOT_TOKEN;

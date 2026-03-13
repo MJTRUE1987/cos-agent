@@ -981,7 +981,7 @@ let _tomorrowPlanCache = null;
 let _endOfWeekCache = null;
 let _nextWeekPlanCache = null;
 let _lastSyncedAt = localStorage.getItem('lastSyncedAt') || null;
-let quickMode = false;
+const quickMode = false; // SAFETY: quick mode disabled — bypasses all confirmation dialogs
 
 // Navigation history for back button
 let _navHistory = [];
@@ -2148,10 +2148,7 @@ function renderContextBar() {
           <button onclick="goBack()" style="background:transparent;border:1px solid #334155;color:#94a3b8;font-size:12px;padding:3px 8px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:4px;" onmouseover="this.style.color='#fff';this.style.borderColor='#60a5fa'" onmouseout="this.style.color='#94a3b8';this.style.borderColor='#334155'">&larr; Back</button>
           <div class="ctx-selected-label" style="margin:0;">Selected</div>
         </div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:${quickMode?'#f59e0b':'#475569'};cursor:pointer;">
-          <span>Quick Mode</span>
-          <input type="checkbox" ${quickMode?'checked':''} onchange="quickMode=this.checked;renderContextBar()" style="accent-color:#f59e0b;">
-        </label>
+        <!-- Quick Mode toggle removed: unsafe bypass of confirmation dialogs -->
       </div>
       <div class="ctx-company-row">
         <div class="ctx-company-name">${esc(sel.company)}${dv}</div>
@@ -2607,79 +2604,12 @@ async function createGmailDraft(itemId, alsoCrm) {
 
     const item = ACTIONS.find(a => a.id === itemId);
 
-    // Check if this action has a proposed time — auto-create calendar invite
-    const ss = item?._signalState;
-    const sched = ss?.recommendation?.scheduling || ss?.signals?.scheduling;
-    let proposedTimeForInvite = sched?.primaryProposal || sched?.proposedTimes?.[0];
-    if (!proposedTimeForInvite && item?.proposedTimes?.length) {
-      proposedTimeForInvite = { raw: item.proposedTimes[0].raw, date: new Date(item.proposedTimes[0].date), timezone: item.proposedTimes[0].timezone };
-    }
-
-    if (proposedTimeForInvite?.date) {
-      // Auto-create calendar invite after draft
-      document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div><div class="modal-loading" style="margin-top:8px;"><div class="spin"></div>Creating calendar invite with Zoom...</div>`;
-
-      addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span><br><span style="color:#f59e0b;">Creating calendar invite...</span>`);
-
-      // Collect attendees
-      const attendeeEmails = [...new Set([...to.split(/[,;]\s*/), ...cc.split(/[,;]\s*/)])].filter(e => e.includes('@'));
-
-      try {
-        const calRes = await apiFetch('/api/calendar-create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: `${item.company} — Prescient AI Intro`,
-            start: proposedTimeForInvite.date.toISOString ? proposedTimeForInvite.date.toISOString() : proposedTimeForInvite.date,
-            attendees: attendeeEmails.map(e => ({ email: e.trim() })),
-            description: `Meeting with ${item.company}.\n\nContext: ${item.task || ''}\n\nScheduled via COS Agent.`,
-            timezone: proposedTimeForInvite.timezone === 'EST' ? 'America/New_York' : proposedTimeForInvite.timezone === 'CST' ? 'America/Chicago' : proposedTimeForInvite.timezone === 'PST' ? 'America/Los_Angeles' : 'America/New_York',
-            useZoom: true,
-          }),
-        });
-        const calData = await calRes.json();
-
-        if (calData.success) {
-          const confType = calData.conferenceType === 'zoom' ? 'Zoom' : 'Google Meet';
-          document.getElementById("draftStatus").innerHTML = `
-            <div class="modal-success">&#10003; Draft created in Gmail</div>
-            <div class="modal-success" style="margin-top:4px;">&#10003; Calendar invite sent — ${confType}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
-              ${calData.meetLink ? `<a href="${calData.meetLink}" target="_blank" style="color:#60a5fa;">${confType} link</a> · ` : ''}
-              <a href="${calData.htmlLink}" target="_blank" style="color:#60a5fa;">View in Calendar</a>
-              · Invites sent to ${calData.attendees?.length || attendeeEmails.length} people
-            </div>`;
-          document.getElementById("modalFooter").innerHTML = `
-            ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
-            <button class="modal-btn-green" onclick="closeModal();markDone(${itemId})">Done</button>`;
-          addFeedItem('meeting', `<strong style="color:#10b981;">${item.company}</strong> — draft + calendar invite SENT for ${proposedTimeForInvite.raw}`, itemId);
-          loadCalendar(); // Refresh
-        } else {
-          document.getElementById("draftStatus").innerHTML = `
-            <div class="modal-success">&#10003; Draft created in Gmail</div>
-            <div class="modal-error" style="margin-top:4px;">Calendar invite failed: ${calData.error || 'unknown'}</div>
-            ${calData.hint ? `<div style="font-size:10px;color:#f59e0b;margin-top:4px;">${calData.hint}</div>` : ''}`;
-          document.getElementById("modalFooter").innerHTML = `
-            ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
-            <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
-        }
-      } catch (calErr) {
-        console.error('[createGmailDraft] Calendar invite failed:', calErr);
-        document.getElementById("draftStatus").innerHTML = `
-          <div class="modal-success">&#10003; Draft created in Gmail</div>
-          <div class="modal-error" style="margin-top:4px;">Calendar invite failed: ${calErr.message}</div>`;
-        document.getElementById("modalFooter").innerHTML = `
-          ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open Draft in Gmail</a>` : ''}
-          <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
-      }
-    } else {
-      // No proposed time — normal draft flow
-      document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div>`;
-      document.getElementById("modalFooter").innerHTML = `
-        ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open in Gmail</a>` : ''}
-        <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
-      addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span>`);
-    }
+    // SAFETY: Calendar auto-fire removed. Use "Confirm + Send Invite" button for calendar invites.
+    document.getElementById("draftStatus").innerHTML = `<div class="modal-success">&#10003; Draft created in Gmail</div>`;
+    document.getElementById("modalFooter").innerHTML = `
+      ${data.url ? `<a href="${data.url}" target="_blank" class="modal-btn-primary" style="text-decoration:none;display:inline-block;">Open in Gmail</a>` : ''}
+      <button class="modal-btn-green" onclick="closeModal()">Done</button>`;
+    addChat("agent", `<strong>&#10003; Gmail draft created</strong> — ${subject}<br><span style="color:#64748b;">To: ${to}</span>`);
 
     if (alsoCrm && item) {
       setTimeout(() => { closeModal(); showCrmWizard(item); }, 500);
@@ -2695,7 +2625,6 @@ async function createGmailDraft(itemId, alsoCrm) {
 // ═══════════════════════════════════════
 async function showPostCallFlow(item) {
   if (!item) { addChat("agent", "Select a meeting/item first."); return; }
-  if (quickMode) { runQuickPostCall(item); return; }
   const deal = PIPELINE.find(d => d.name.toLowerCase().includes(item.company.toLowerCase()));
   const emailMatch = (item.draftPrompt || '').match(/[\w.+-]+@[\w.-]+\.\w+/g) || [];
 
