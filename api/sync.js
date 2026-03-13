@@ -18,10 +18,13 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { lastSyncedAt } = req.body || {};
+  const { lastSyncedAt, fullSync: requestedFullSync } = req.body || {};
   const syncStart = new Date();
 
-  // Cold start guard: limit lookback
+  // Full sync when explicitly requested or on cold start (no prior sync)
+  const fullSync = requestedFullSync || !lastSyncedAt;
+
+  // Cold start guard: limit lookback for incremental
   const sinceDate = lastSyncedAt
     ? new Date(lastSyncedAt)
     : new Date(Date.now() - 48 * 3600000); // 48 hours for first sync
@@ -34,7 +37,7 @@ export default async function handler(req, res) {
   // Run all three syncs in parallel
   const [gmailResult, hubspotResult, granolaResult] = await Promise.allSettled([
     syncGmail(sinceDate, summary),
-    syncHubSpot(sinceDate, summary),
+    syncHubSpot(sinceDate, summary, fullSync),
     syncGranola(sinceDate, summary),
   ]);
 
@@ -56,6 +59,9 @@ export default async function handler(req, res) {
     summary.errors.push('Granola: ' + (granolaResult.reason?.message || 'failed'));
   }
 
+  // ── Generate feed events by diffing against previous snapshot ──
+  const feedEvents = [];
+
   // Persist to KV if available (with distributed lock to prevent race conditions)
   try {
     const kvModule = await import('@vercel/kv');
@@ -67,21 +73,86 @@ export default async function handler(req, res) {
     }
 
     try {
+      // Load previous snapshot for diffing
+      const prevPipeline = (await kv.get('pipeline')) || [];
+      const prevPipeMap = new Map(prevPipeline.map(d => [String(d.id), d]));
+      const emittedIds = new Set((await kv.get('cos_feed_emitted')) || []);
+
+      // Diff deals: detect created, stage changes, owner changes
+      for (const deal of updatedPipeline) {
+        const prev = prevPipeMap.get(String(deal.id));
+        if (!prev) {
+          const evId = `hubspot_deal_created_${deal.id}`;
+          if (!emittedIds.has(evId)) {
+            feedEvents.push({ id: evId, type: 'deal_created', text: `<strong>${deal.name}</strong> — new deal created (${deal.stage})`, ts: syncStart.toISOString(), expiresAt: new Date(syncStart.getTime() + 24*3600000).toISOString() });
+            emittedIds.add(evId);
+          }
+        } else {
+          if (prev.stage && deal.stage && prev.stage !== deal.stage) {
+            const evId = `hubspot_stage_change_${deal.id}_${deal.stage.replace(/\s+/g,'_')}`;
+            if (!emittedIds.has(evId)) {
+              feedEvents.push({ id: evId, type: 'deal_stage', text: `<strong>${deal.name}</strong> — moved to <strong>${deal.stage}</strong> (was ${prev.stage})`, ts: syncStart.toISOString(), expiresAt: new Date(syncStart.getTime() + 24*3600000).toISOString() });
+              emittedIds.add(evId);
+            }
+          }
+          if (prev.owner && deal.owner && prev.owner !== deal.owner) {
+            const evId = `hubspot_owner_change_${deal.id}_${deal.owner}`;
+            if (!emittedIds.has(evId)) {
+              feedEvents.push({ id: evId, type: 'deal_owner', text: `<strong>${deal.name}</strong> — owner changed to ${deal.owner}`, ts: syncStart.toISOString(), expiresAt: new Date(syncStart.getTime() + 24*3600000).toISOString() });
+              emittedIds.add(evId);
+            }
+          }
+        }
+      }
+
+      // Diff emails: new action items
+      for (const action of newActions) {
+        const evId = `gmail_action_${action.threadId || action.id}`;
+        if (!emittedIds.has(evId)) {
+          const label = action.isIntro
+            ? `<strong style="color:#10b981;">🤝 WARM INTRO</strong> <strong>${action.company}</strong> — ${action.task}`
+            : `<strong>${action.company}</strong> — ${action.task}`;
+          feedEvents.push({ id: evId, type: action.isIntro ? 'intro' : 'email', text: label, ts: action.lastActivity ? new Date(action.lastActivity).toISOString() : syncStart.toISOString(), actionId: action.id, expiresAt: new Date(syncStart.getTime() + 24*3600000).toISOString() });
+          emittedIds.add(evId);
+        }
+      }
+
+      // Diff meetings: new from Granola
+      for (const mtg of newMeetings) {
+        const evId = `granola_meeting_${mtg.granolaId || (mtg.title + '_' + mtg.date).replace(/\s+/g,'_')}`;
+        if (!emittedIds.has(evId)) {
+          feedEvents.push({ id: evId, type: 'meeting', text: `<strong>${mtg.title}</strong> — ${mtg.people}`, ts: syncStart.toISOString(), expiresAt: new Date(syncStart.getTime() + 24*3600000).toISOString() });
+          emittedIds.add(evId);
+        }
+      }
+
+      // Persist data
       if (newActions.length > 0) {
         const existing = (await kv.get('actions')) || [];
         const merged = upsertById(existing, newActions);
         await kv.set('actions', merged);
       }
       if (updatedPipeline.length > 0) {
-        const existing = (await kv.get('pipeline')) || [];
-        const merged = upsertById(existing, updatedPipeline);
-        await kv.set('pipeline', merged);
+        if (fullSync) {
+          await kv.set('pipeline', updatedPipeline);
+          console.log(`[sync] Full pipeline sync: replaced with ${updatedPipeline.length} deals from HubSpot`);
+        } else {
+          const existing = (await kv.get('pipeline')) || [];
+          const merged = upsertById(existing, updatedPipeline);
+          await kv.set('pipeline', merged);
+        }
       }
       if (newMeetings.length > 0) {
         const existing = (await kv.get('meetings')) || [];
         const merged = upsertByTitle(existing, newMeetings);
         await kv.set('meetings', merged);
       }
+
+      // Prune emitted IDs older than 48h (keep set manageable)
+      // Store as array — KV handles serialization
+      const emittedArray = Array.from(emittedIds).slice(-500);
+      await kv.set('cos_feed_emitted', emittedArray);
+
       // Store sync timestamp
       const meta = (await kv.get('metadata')) || {};
       meta.lastSyncedAt = syncStart.toISOString();
@@ -94,12 +165,15 @@ export default async function handler(req, res) {
     // Data still returned to frontend for local merge
   }
 
+  console.log(`[sync] Feed events generated: ${feedEvents.length}`);
+
   return res.status(200).json({
     success: true,
     syncedAt: syncStart.toISOString(),
     newActions,
     updatedPipeline,
     newMeetings,
+    feedEvents,
     summary: {
       emailsProcessed: summary.emailsProcessed,
       dealsUpdated: summary.dealsUpdated,
@@ -326,44 +400,68 @@ Return ONLY valid JSON array.`,
 }
 
 // ── HubSpot Sync ──
-async function syncHubSpot(sinceDate, summary) {
+async function syncHubSpot(sinceDate, summary, fullSync = false) {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) return [];
 
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  try {
-    const searchRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/search`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        filterGroups: [{
-          filters: [{
-            propertyName: 'hs_lastmodifieddate',
-            operator: 'GTE',
-            value: sinceDate.getTime().toString(),
-          }],
+  // Owner mapping
+  const OWNERS = { '151853665': 'Mike', '82490290': 'Brian', '743878021': 'Will', '1003618676': 'Jason', '84289936': 'Michael O', '82544484': 'Jason N' };
+
+  const STAGE_MAP = {
+    '93124525': 'Disco Booked', '998751160': 'Disco Complete', 'appointmentscheduled': 'Demo Scheduled',
+    '123162712': 'Demo Completed', 'decisionmakerboughtin': 'Negotiating', '227588384': 'Committed',
+    'closedwon': 'Closed Won', 'closedlost': 'Closed Lost', '60237411': 'Nurture', '53401375': 'Booking',
+  };
+
+  // Build filter: full sync gets all non-closed deals; incremental gets recently modified
+  const filterGroups = fullSync
+    ? [{
+        filters: [{
+          propertyName: 'dealstage',
+          operator: 'NOT_IN',
+          values: ['closedwon', 'closedlost'],
         }],
-        properties: ['dealname', 'dealstage', 'amount', 'closedate', 'hubspot_owner_id'],
-        sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }],
-        limit: 50,
-      }),
-    });
+      }]
+    : [{
+        filters: [{
+          propertyName: 'hs_lastmodifieddate',
+          operator: 'GTE',
+          value: sinceDate.getTime().toString(),
+        }],
+      }];
 
-    if (!searchRes.ok) return [];
-    const searchData = await searchRes.json();
-    const deals = searchData.results || [];
+  const properties = ['dealname', 'dealstage', 'amount', 'closedate', 'hubspot_owner_id'];
+  const sorts = [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }];
 
-    // Owner mapping
-    const OWNERS = { '151853665': 'Mike', '82490290': 'Brian', '743878021': 'Will', '1003618676': 'Jason', '84289936': 'Michael O', '82544484': 'Jason N' };
+  try {
+    // Paginate to fetch all matching deals
+    let allDeals = [];
+    let after = undefined;
+    do {
+      const body = { filterGroups, properties, sorts, limit: 100 };
+      if (after) body.after = after;
 
-    const STAGE_MAP = {
-      '93124525': 'Disco Booked', '998751160': 'Disco Complete', 'appointmentscheduled': 'Demo Scheduled',
-      '123162712': 'Demo Completed', 'decisionmakerboughtin': 'Negotiating', '227588384': 'Committed',
-      'closedwon': 'Closed Won', 'closedlost': 'Closed Lost', '60237411': 'Nurture', '53401375': 'Booking',
-    };
+      const searchRes = await fetch(`${HUBSPOT_BASE}/crm/v3/objects/deals/search`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    const updatedDeals = deals.map(d => ({
+      if (!searchRes.ok) {
+        console.error(`[sync:hubspot] Search failed: ${searchRes.status} ${searchRes.statusText}`);
+        return [];
+      }
+
+      const searchData = await searchRes.json();
+      allDeals.push(...(searchData.results || []));
+      after = searchData.paging?.next?.after;
+    } while (after);
+
+    console.log(`[sync:hubspot] ${fullSync ? 'Full' : 'Incremental'} sync fetched ${allDeals.length} deals`);
+
+    const updatedDeals = allDeals.map(d => ({
       id: d.id,
       name: d.properties.dealname || '',
       stage: STAGE_MAP[d.properties.dealstage] || d.properties.dealstage || '',

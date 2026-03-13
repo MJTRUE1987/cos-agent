@@ -1044,6 +1044,14 @@ async function loadCalendar() {
         }
       });
       runSignalEngine(); // Reconcile signals now that calendar is loaded
+      // Emit calendar diff events (only after initial load to avoid stale flood)
+      if (_initialLoadComplete) {
+        emitCalendarFeedEvents(data.meetings);
+      } else {
+        // Just store the snapshot without emitting
+        _prevCalendarIds = new Set(data.meetings.map(m => m.id));
+        localStorage.setItem('cos_prev_calendar_ids', JSON.stringify(Array.from(_prevCalendarIds)));
+      }
       renderCurrentTab();
     }
   } catch (e) {
@@ -1138,44 +1146,18 @@ async function syncInBackground() {
     renderCurrentTab();
     updateSyncIndicator();
 
-    // Post to live feed
-    const newEmails = data.summary?.emailsProcessed || 0;
-    const newDeals = data.summary?.dealsUpdated || 0;
-    const newMtgs = data.summary?.meetingsFound || 0;
-    const total = newEmails + newDeals + newMtgs;
-
-    if (newEmails > 0) {
-      const intros = [];
-      (data.newActions || []).forEach(a => {
-        if (a.isIntro) {
-          addFeedItem('email', `<strong style="color:#10b981;">🤝 WARM INTRO</strong> <strong>${a.company}</strong> — ${a.task}`, a.id);
-          intros.push(a);
-          console.log(`[sync:feed] Intro email surfaced: company=${a.company}, introducer=${a.introducer}, prospects=${JSON.stringify(a.prospects)}`);
-        } else {
-          addFeedItem('email', `<strong>${a.company}</strong> — ${a.task}`, a.id);
-        }
-      });
-      // Auto-select intro if it's the only new item and nothing is selected
-      if (intros.length === 1 && !selectedId) {
-        const introItem = ACTIONS.find(x => x.id === intros[0].id);
-        if (introItem) setTimeout(() => selectItem(introItem.id), 300);
-      }
-    }
-    if (newDeals > 0) {
-      (data.updatedPipeline || []).forEach(d => {
-        addFeedItem('deal', `<strong>${d.name}</strong> moved to ${d.stage}`, null);
-      });
-    }
-    if (newMtgs > 0) {
-      (data.newMeetings || []).forEach(m => {
-        addFeedItem('meeting', `<strong>${m.title}</strong> — ${m.people}`, null);
-      });
+    // Process server-generated feed events (deduped, real timestamps)
+    if (data.feedEvents?.length > 0) {
+      processFeedEvents(data.feedEvents);
+      const total = data.feedEvents.length;
+      showToast(`Synced: ${total} new event${total > 1 ? 's' : ''}`);
     }
 
-    if (total > 0) {
-      showToast(`Synced: ${newEmails} emails, ${newDeals} deals, ${newMtgs} meetings`);
-    } else {
-      addFeedItem('sync', 'No new updates', null);
+    // Auto-select intro if it's the only new action and nothing is selected
+    const intros = (data.newActions || []).filter(a => a.isIntro);
+    if (intros.length === 1 && !selectedId) {
+      const introItem = ACTIONS.find(x => x.id === intros[0].id);
+      if (introItem) setTimeout(() => selectItem(introItem.id), 300);
     }
 
     if (data.summary?.errors?.length) {
@@ -1231,12 +1213,17 @@ function updateAutoSyncLabel() {
 // LIVE FEED + AUTO-SYNC
 // ═══════════════════════════════════════
 const SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
+const FEED_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 let _syncTimer = null;
 let _feedItems = [];
 let _feedOpen = false;
 let _feedUnread = 0;
-let _initialLoadComplete = false; // suppress feed items until first sync completes
-let _lastSyncSuccess = null; // true/false/null for sync status display
+let _initialLoadComplete = false;
+let _lastSyncSuccess = null;
+// Dedup: event IDs we've already rendered this session
+let _seenEventIds = new Set(JSON.parse(localStorage.getItem('cos_seen_events') || '[]'));
+// Persist previous calendar event IDs for calendar diff
+let _prevCalendarIds = new Set(JSON.parse(localStorage.getItem('cos_prev_calendar_ids') || '[]'));
 
 function startAutoSync() {
   if (_syncTimer) clearInterval(_syncTimer);
@@ -1324,18 +1311,36 @@ function toggleFeed() {
   }
 }
 
-function addFeedItem(type, text, actionId) {
-  const icons = {
-    email: '\u2709\uFE0F', deal: '\u26A1', meeting: '\uD83D\uDCC5', sync: '\u2714\uFE0F', error: '\u26A0\uFE0F',
-    scheduling: '\uD83D\uDCC5', signal: '\uD83D\uDCE1', reply: '\u21A9\uFE0F', conflict: '\u26A0\uFE0F',
-    available: '\u2705', intro: '\uD83E\uDD1D', state_change: '\uD83D\uDD04',
-  };
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+const FEED_ICONS = {
+  email: '\u2709\uFE0F', deal: '\u26A1', deal_created: '\u2795', deal_stage: '\u26A1', deal_owner: '\uD83D\uDC64',
+  meeting: '\uD83D\uDCC5', calendar_new: '\uD83D\uDCC5', calendar_cancelled: '\u274C',
+  sync: '\u2714\uFE0F', error: '\u26A0\uFE0F', intro: '\uD83E\uDD1D',
+};
 
-  const item = { type, text, time: timeStr, actionId, ts: now.getTime() };
+// Add a feed item with optional stable event ID for dedup
+function addFeedItem(type, text, actionId, opts) {
+  const eventId = opts?.eventId || null;
+  const eventTs = opts?.eventTs ? new Date(opts.eventTs) : new Date();
+
+  // Dedup: skip if we've already shown this event
+  if (eventId && _seenEventIds.has(eventId)) return;
+
+  // Expiration: skip if event is older than 24h
+  if (opts?.expiresAt && new Date(opts.expiresAt) < new Date()) return;
+  if (eventTs.getTime() < Date.now() - FEED_EXPIRY_MS) return;
+
+  if (eventId) {
+    _seenEventIds.add(eventId);
+    // Persist to localStorage (keep last 500)
+    const arr = Array.from(_seenEventIds).slice(-500);
+    localStorage.setItem('cos_seen_events', JSON.stringify(arr));
+  }
+
+  const timeStr = eventTs.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+
+  const item = { type, text, time: timeStr, actionId, ts: eventTs.getTime(), eventId };
   _feedItems.unshift(item);
-  if (_feedItems.length > 50) _feedItems.length = 50; // cap at 50
+  if (_feedItems.length > 50) _feedItems.length = 50;
 
   if (!_feedOpen) {
     _feedUnread++;
@@ -1348,73 +1353,70 @@ function addFeedItem(type, text, actionId) {
   const clickAttr = actionId ? ` onclick="selectItem(${actionId})" style="cursor:pointer;"` : '';
   const el = document.createElement('div');
   el.className = 'feed-item';
-  el.innerHTML = `<span class="feed-time">${timeStr}</span><span class="feed-icon">${icons[type] || '\u2022'}</span><span class="feed-text"${clickAttr}>${text}</span>`;
+  el.innerHTML = `<span class="feed-time">${timeStr}</span><span class="feed-icon">${FEED_ICONS[type] || '\u2022'}</span><span class="feed-text"${clickAttr}>${text}</span>`;
 
   feed.insertBefore(el, feed.firstChild);
-
-  // Trim DOM to 50 items
   while (feed.children.length > 50) feed.removeChild(feed.lastChild);
 }
 
-// Emit signal-state-driven feed items after engine runs
+// Process server-generated feed events from /api/sync
+function processFeedEvents(events) {
+  if (!events || !events.length) return;
+  // Sort oldest first so newest ends up at top
+  const sorted = [...events].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  for (const ev of sorted) {
+    addFeedItem(ev.type, ev.text, ev.actionId || null, {
+      eventId: ev.id,
+      eventTs: ev.ts,
+      expiresAt: ev.expiresAt,
+    });
+  }
+}
+
+// Generate calendar diff events by comparing current vs previous calendar IDs
+function emitCalendarFeedEvents(calendarMeetings) {
+  if (!calendarMeetings || !calendarMeetings.length) return;
+  const currentIds = new Set(calendarMeetings.map(m => m.id));
+
+  // New meetings (in current but not in previous)
+  for (const m of calendarMeetings) {
+    if (!_prevCalendarIds.has(m.id)) {
+      const evId = `calendar_meeting_created_${m.id}`;
+      const startDt = m.start ? new Date(m.start) : new Date();
+      // Only emit for future meetings
+      if (startDt > new Date()) {
+        const people = m.externalAttendees?.map(a => a.name).join(', ') || '';
+        addFeedItem('calendar_new', `<strong>${esc(m.title)}</strong> scheduled${people ? ' — ' + esc(people) : ''}`, null, {
+          eventId: evId,
+          eventTs: new Date().toISOString(),
+          expiresAt: startDt.toISOString(), // expires when meeting starts
+        });
+      }
+    }
+  }
+
+  // Cancelled meetings (in previous but not in current)
+  for (const prevId of _prevCalendarIds) {
+    if (!currentIds.has(prevId)) {
+      const evId = `calendar_meeting_cancelled_${prevId}`;
+      addFeedItem('calendar_cancelled', `Meeting cancelled`, null, {
+        eventId: evId,
+        eventTs: new Date().toISOString(),
+      });
+    }
+  }
+
+  // Update previous snapshot
+  _prevCalendarIds = currentIds;
+  localStorage.setItem('cos_prev_calendar_ids', JSON.stringify(Array.from(currentIds)));
+}
+
+// Track canonical state for signal engine (no longer emits feed items — feed is event-based now)
 function emitSignalFeedItems(results) {
-  // Suppress on initial load — these are stale state computations, not real-time changes
-  if (!_initialLoadComplete) return;
   for (const [id, state] of results) {
     const action = ACTIONS.find(a => a.id === id);
     if (!action) continue;
-    const prev = action._prevCanonicalState;
-    const cur = state.canonicalState;
-
-    // Only emit on state change or first computation of interesting states
-    if (prev === cur) continue;
-    action._prevCanonicalState = cur;
-
-    switch (cur) {
-      case 'AVAILABLE_TO_BOOK': {
-        const sched = state.scheduling || state.recommendation?.scheduling;
-        const timeStr = sched?.primaryProposal?.raw || 'proposed time';
-        addFeedItem('available', `<strong style="color:#10b981;">${action.company}</strong> — ${timeStr} is <strong>OPEN</strong>. Confirm + invite!`, id);
-        break;
-      }
-      case 'SCHEDULING_CONFLICT': {
-        const sched = state.scheduling || state.recommendation?.scheduling;
-        const timeStr = sched?.primaryProposal?.raw || 'proposed time';
-        const conflictName = sched?.availability?.conflicts?.[0]?.title || 'another meeting';
-        addFeedItem('conflict', `<strong style="color:#ef4444;">${action.company}</strong> — ${timeStr} <strong>CONFLICTS</strong> with "${conflictName}"`, id);
-        break;
-      }
-      case 'SCHEDULING_PROPOSED':
-        addFeedItem('scheduling', `<strong>${action.company}</strong> — time proposed, checking availability...`, id);
-        break;
-      case 'WAITING_ON_PROSPECT':
-        addFeedItem('scheduling', `<strong>${action.company}</strong> — sent availability, waiting for prospect`, id);
-        break;
-      case 'MEETING_BOOKED':
-        addFeedItem('meeting', `<strong style="color:#a855f7;">${action.company}</strong> — meeting booked! ${state.recommendation?.text || ''}`, id);
-        break;
-      case 'MEETING_COMPLETED':
-        addFeedItem('meeting', `<strong>${action.company}</strong> — meeting completed. Run post-call?`, id);
-        break;
-      case 'INTRO_RECEIVED':
-        if (!prev) addFeedItem('intro', `<strong style="color:#10b981;">${action.company}</strong> — warm intro received`, id);
-        break;
-      case 'FOLLOW_UP_REQUIRED':
-        addFeedItem('signal', `<strong style="color:#f59e0b;">${action.company}</strong> — follow-up needed (${state.signals?.email?.daysSinceActivity || '?'}d stale)`, id);
-        break;
-      case 'REPLIED':
-        addFeedItem('reply', `<strong style="color:#60a5fa;">${action.company}</strong> — prospect replied`, id);
-        break;
-      case 'CLOSED_WON':
-        addFeedItem('deal', `<strong style="color:#10b981;">${action.company}</strong> — CLOSED WON!`, id);
-        break;
-      case 'CLOSED_LOST':
-        addFeedItem('deal', `<strong style="color:#ef4444;">${action.company}</strong> — deal lost`, id);
-        break;
-      case 'PROPOSAL_ACTIVE':
-        addFeedItem('deal', `<strong style="color:#f59e0b;">${action.company}</strong> — proposal active`, id);
-        break;
-    }
+    action._prevCanonicalState = state.canonicalState;
   }
 }
 
