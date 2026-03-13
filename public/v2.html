@@ -1,0 +1,2354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prescient AI — COS Agent v2</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0e1a; color: #e2e8f0; min-height: 100vh; }
+  a { color: #60a5fa; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { cursor: pointer; border: none; font-family: inherit; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 5px; transition: all 0.15s; }
+  button:active { transform: scale(0.96); }
+
+  /* ── LAYOUT: sidebar | center | right panel ── */
+  .layout { display: flex; height: 100vh; }
+
+  /* ── SIDEBAR ── */
+  .sidebar { width: 200px; background: #0f1525; border-right: 1px solid #1e293b; padding: 20px 14px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .sidebar h2 { font-size: 14px; color: #fff; font-weight: 700; margin-bottom: 4px; }
+  .sidebar .sub { font-size: 11px; color: #10b981; margin-bottom: 20px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; color: #94a3b8; font-size: 13px; cursor: pointer; margin-bottom: 2px; }
+  .nav-item:hover, .nav-item.active { background: #1e293b; color: #fff; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .nav-item .count { margin-left: auto; font-size: 10px; background: #1e293b; color: #64748b; padding: 1px 6px; border-radius: 8px; }
+  .sidebar .spacer { flex: 1; }
+  .sidebar .user { font-size: 12px; color: #64748b; border-top: 1px solid #1e293b; padding-top: 12px; }
+  .sidebar .user strong { color: #cbd5e1; display: block; }
+  .nav-divider { height: 1px; background: #1e293b; margin: 10px 0; }
+
+  /* ── CENTER ── */
+  .center { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .center-scroll { flex: 1; overflow-y: auto; padding: 0; }
+  #main { padding: 20px 28px; padding-bottom: 200px; }
+
+  /* ── RIGHT PANEL ── */
+  .right-panel { width: 370px; background: #0f1525; border-left: 1px solid #1e293b; display: flex; flex-direction: column; flex-shrink: 0; }
+  .panel-header { padding: 14px 18px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
+  .panel-header .pulse { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .panel-header h3 { font-size: 14px; font-weight: 600; color: #fff; }
+  .panel-header .badge { font-size: 10px; background: rgba(16,185,129,0.15); color: #10b981; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+  .panel-tabs { display: flex; border-bottom: 1px solid #1e293b; }
+  .panel-tab { flex: 1; padding: 10px; font-size: 11px; font-weight: 600; color: #64748b; text-align: center; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.5px; }
+  .panel-tab:hover { color: #94a3b8; }
+  .panel-tab.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 14px; }
+
+  /* ── COMMAND BAR (bottom-docked) ── */
+  .command-dock { position: sticky; bottom: 0; background: #0f1525; border-top: 1px solid #1e293b; padding: 14px 28px; z-index: 20; }
+  .command-chips { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .quick-chip { font-size: 11px; padding: 5px 10px; border-radius: 14px; background: #111827; border: 1px solid #1e293b; color: #94a3b8; cursor: pointer; transition: all 0.15s; }
+  .quick-chip:hover { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.08); }
+  .command-row { display: flex; gap: 8px; align-items: flex-end; }
+  .command-input { flex: 1; background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 12px 16px; color: #e2e8f0; font-size: 14px; font-family: inherit; resize: none; outline: none; min-height: 44px; max-height: 120px; line-height: 1.4; }
+  .command-input::placeholder { color: #475569; }
+  .command-input:focus { border-color: #3b82f6; }
+  .command-send { width: 44px; height: 44px; border-radius: 10px; background: #1e40af; color: #93c5fd; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; padding: 0; }
+  .command-send:hover { background: #1d4ed8; }
+  .command-send:disabled { opacity: 0.4; cursor: not-allowed; }
+  .command-send svg { width: 18px; height: 18px; fill: currentColor; }
+
+  /* ── SECTION HEADERS ── */
+  .section { margin-bottom: 24px; }
+  .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .section-title { font-size: 13px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
+  .section-count { font-size: 10px; color: #475569; background: #1e293b; padding: 1px 6px; border-radius: 8px; }
+
+  /* ── INTENT BANNER ── */
+  .intent-banner { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+  .intent-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .intent-badge { font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .intent-badge.high { background: rgba(16,185,129,0.15); color: #10b981; }
+  .intent-badge.medium { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .intent-badge.low { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .intent-label { font-size: 14px; font-weight: 600; color: #fff; }
+  .intent-sub { font-size: 12px; color: #64748b; }
+  .intent-entities { display: flex; gap: 6px; flex-wrap: wrap; }
+  .entity-chip { font-size: 10px; background: rgba(96,165,250,0.12); color: #60a5fa; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+
+  /* ── EXECUTION TRACE ── */
+  .exec-trace { margin-bottom: 16px; }
+  .exec-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .exec-status { font-size: 10px; padding: 3px 10px; border-radius: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .exec-status.running { background: rgba(59,130,246,0.15); color: #3b82f6; }
+  .exec-status.completed { background: rgba(16,185,129,0.15); color: #10b981; }
+  .exec-status.failed { background: rgba(239,68,68,0.15); color: #ef4444; }
+  .exec-status.waiting { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .exec-meta { font-size: 11px; color: #475569; margin-left: auto; }
+  .exec-step { display: flex; gap: 0; margin-bottom: 2px; position: relative; }
+  .exec-step-line { width: 28px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+  .exec-step-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #334155; background: #0a0e1a; z-index: 1; margin-top: 14px; }
+  .exec-step-dot.pending { border-color: #334155; }
+  .exec-step-dot.running { border-color: #3b82f6; background: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.4); }
+  .exec-step-dot.completed { border-color: #10b981; background: #10b981; }
+  .exec-step-dot.failed { border-color: #ef4444; background: #ef4444; }
+  .exec-step-dot.skipped { border-color: #334155; background: #1e293b; }
+  .exec-step-dot.approval { border-color: #f59e0b; background: #f59e0b; }
+  .exec-step-wire { flex: 1; width: 2px; background: #1e293b; margin-top: 2px; }
+  .exec-step:last-child .exec-step-wire { display: none; }
+  .exec-step-card { flex: 1; background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; margin-bottom: 4px; transition: all 0.15s; }
+  .exec-step-card.running { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.04); }
+  .exec-step-card.completed { border-color: rgba(16,185,129,0.2); }
+  .exec-step-card.failed { border-color: rgba(239,68,68,0.2); background: rgba(239,68,68,0.04); }
+  .exec-step-card.approval { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.04); }
+  .step-top { display: flex; align-items: center; gap: 8px; }
+  .step-seq { font-size: 10px; font-weight: 700; color: #475569; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+  .step-tool { font-size: 11px; font-family: 'SF Mono', 'Cascadia Code', monospace; color: #60a5fa; }
+  .step-status-label { font-size: 10px; margin-left: auto; font-weight: 600; }
+  .step-status-label.pending { color: #475569; }
+  .step-status-label.running { color: #3b82f6; }
+  .step-status-label.completed { color: #10b981; }
+  .step-status-label.failed { color: #ef4444; }
+  .step-status-label.skipped { color: #475569; }
+  .step-desc { font-size: 12px; color: #cbd5e1; margin-top: 4px; }
+  .step-error { font-size: 11px; color: #ef4444; margin-top: 4px; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+  .step-duration { font-size: 10px; color: #475569; margin-top: 2px; }
+
+  /* ── APPROVAL BUBBLE ── */
+  .approval-bubble { background: #111827; border: 2px solid rgba(245,158,11,0.4); border-radius: 10px; padding: 14px 16px; margin: 8px 0; }
+  .approval-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .approval-icon { font-size: 16px; }
+  .approval-title { font-size: 13px; font-weight: 700; color: #f59e0b; }
+  .approval-desc { font-size: 12px; color: #94a3b8; margin-bottom: 10px; line-height: 1.5; }
+  .approval-detail { font-size: 11px; font-family: 'SF Mono', 'Cascadia Code', monospace; color: #64748b; background: #0a0e1a; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
+  .approval-actions { display: flex; gap: 8px; }
+  .approval-btn { padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .approval-approve { background: rgba(16,185,129,0.2); color: #10b981; }
+  .approval-approve:hover { background: rgba(16,185,129,0.3); }
+  .approval-deny { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+  .approval-deny:hover { background: rgba(239,68,68,0.2); }
+  .approval-edit { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .approval-edit:hover { color: #fff; border-color: #475569; }
+  .approval-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+
+  /* ── ORIGINAL COMMAND BLOCK ── */
+  .original-command { background: #0a0e1a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  .original-command-label { font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .original-command-text { font-size: 13px; color: #e2e8f0; font-style: italic; line-height: 1.5; }
+
+  /* ── ENTITY RESOLUTION TABLE ── */
+  .entity-resolution { margin-bottom: 12px; }
+  .entity-resolution-title { font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .entity-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #111827; border: 1px solid #1e293b; border-radius: 6px; margin-bottom: 4px; font-size: 12px; }
+  .entity-row.exact { border-color: rgba(16,185,129,0.3); }
+  .entity-row.partial { border-color: rgba(245,158,11,0.3); }
+  .entity-row.not_found { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.04); }
+  .entity-row.ambiguous { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.04); }
+  .entity-match-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .entity-match-dot.exact { background: #10b981; }
+  .entity-match-dot.partial { background: #f59e0b; }
+  .entity-match-dot.not_found { background: #ef4444; }
+  .entity-match-dot.ambiguous { background: #f59e0b; }
+  .entity-name { color: #e2e8f0; font-weight: 600; }
+  .entity-arrow { color: #334155; }
+  .entity-deal { color: #94a3b8; }
+  .entity-stage { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #1e293b; color: #64748b; margin-left: auto; }
+
+  /* ── STAGE CHANGE SUMMARY ── */
+  .stage-change-summary { background: #111827; border: 2px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .stage-change-header { font-size: 13px; font-weight: 700; color: #f59e0b; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .stage-change-count { font-size: 10px; background: rgba(245,158,11,0.15); color: #f59e0b; padding: 2px 8px; border-radius: 8px; }
+  .stage-change-deal { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 12px; }
+  .stage-change-deal:last-child { border-bottom: none; }
+  .stage-from { color: #94a3b8; }
+  .stage-arrow-icon { color: #475569; }
+  .stage-to { color: #ef4444; font-weight: 600; }
+  .stage-to.closedwon { color: #10b981; }
+
+  /* ── ARTIFACTS ── */
+  .artifact { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .artifact-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .artifact-type { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .artifact-type.proposal { color: #a855f7; }
+  .artifact-type.email { color: #60a5fa; }
+  .artifact-type.analysis { color: #10b981; }
+  .artifact-type.scheduling { color: #f59e0b; }
+  .artifact-actions { margin-left: auto; display: flex; gap: 6px; }
+  .artifact-body { font-size: 12px; color: #94a3b8; font-family: 'SF Mono', 'Cascadia Code', monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; line-height: 1.6; background: #0a0e1a; border-radius: 6px; padding: 12px; }
+
+  /* ── TIMELINE (right panel) ── */
+  .timeline-event { padding: 8px 10px; border-left: 2px solid #1e293b; margin-left: 4px; margin-bottom: 2px; transition: all 0.15s; }
+  .timeline-event:hover { background: rgba(30,41,59,0.3); }
+  .timeline-event.agent { border-left-color: #3b82f6; }
+  .timeline-event.success { border-left-color: #10b981; }
+  .timeline-event.error { border-left-color: #ef4444; }
+  .timeline-event.user { border-left-color: #a855f7; }
+  .tl-type { font-size: 9px; font-family: 'SF Mono', 'Cascadia Code', monospace; color: #475569; text-transform: uppercase; }
+  .tl-summary { font-size: 12px; color: #cbd5e1; margin-top: 2px; }
+  .tl-time { font-size: 10px; color: #334155; margin-top: 2px; }
+
+  /* ── CONTEXT PANEL (right panel tab) ── */
+  .ctx-section { margin-bottom: 16px; }
+  .ctx-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #475569; font-weight: 700; margin-bottom: 6px; }
+  .ctx-value { font-size: 13px; color: #cbd5e1; }
+  .ctx-card { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .ctx-card-title { font-size: 12px; font-weight: 600; color: #fff; }
+  .ctx-card-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+
+  /* ── APPROVALS LIST (right panel tab) ── */
+  .approval-item { background: #111827; border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  .approval-item-header { display: flex; align-items: center; gap: 6px; }
+  .approval-item-tool { font-size: 11px; font-family: 'SF Mono', 'Cascadia Code', monospace; color: #f59e0b; }
+  .approval-item-time { font-size: 10px; color: #475569; margin-left: auto; }
+  .approval-item-desc { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+  .approval-item-btns { display: flex; gap: 6px; margin-top: 8px; }
+
+  /* ── WELCOME SCREEN ── */
+  .welcome { text-align: center; padding: 60px 40px; }
+  .welcome h1 { font-size: 24px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  .welcome .tagline { font-size: 14px; color: #64748b; margin-bottom: 32px; }
+  .welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 520px; margin: 0 auto; }
+  .welcome-cmd { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 16px; text-align: left; cursor: pointer; transition: all 0.15s; }
+  .welcome-cmd:hover { border-color: #334155; background: #131b2e; transform: translateY(-1px); }
+  .welcome-cmd .cmd-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #475569; font-weight: 700; margin-bottom: 4px; }
+  .welcome-cmd .cmd-text { font-size: 13px; color: #cbd5e1; line-height: 1.4; }
+
+  /* ── INTEGRATION HEALTH ── */
+  .health-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .health-item { display: flex; align-items: center; gap: 6px; background: #111827; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 10px; font-size: 11px; }
+  .health-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .health-dot.connected { background: #10b981; }
+  .health-dot.failed { background: #ef4444; }
+  .health-dot.checking { background: #f59e0b; animation: pulse 1s infinite; }
+  .health-name { color: #94a3b8; font-weight: 600; }
+  .health-status { color: #475569; }
+
+  /* ── INTEGRATION ERROR STATE ── */
+  .integration-error { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 24px; text-align: center; }
+  .integration-error .ie-icon { font-size: 28px; margin-bottom: 10px; color: #ef4444; }
+  .integration-error .ie-title { font-size: 15px; font-weight: 700; color: #ef4444; margin-bottom: 4px; }
+  .integration-error .ie-source { font-size: 11px; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 8px; }
+  .integration-error .ie-message { font-size: 12px; color: #94a3b8; font-family: 'SF Mono', 'Cascadia Code', monospace; line-height: 1.5; }
+
+  /* ── WIZARD ── */
+  .wizard-container { margin-bottom: 16px; }
+  .wizard-header { background: #111827; border: 1px solid rgba(96,165,250,0.3); border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; }
+  .wizard-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .wizard-subtitle { font-size: 12px; color: #64748b; }
+  .wizard-parsed { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .wizard-parsed-chip { font-size: 10px; padding: 3px 10px; border-radius: 10px; font-weight: 600; }
+  .wizard-parsed-chip.action { background: rgba(96,165,250,0.12); color: #60a5fa; }
+  .wizard-parsed-chip.stage { background: rgba(16,185,129,0.12); color: #10b981; }
+  .wizard-parsed-chip.company { background: rgba(168,85,247,0.12); color: #a855f7; }
+
+  .wizard-steps { display: flex; gap: 0; margin-bottom: 16px; }
+  .wizard-step-indicator { flex: 1; text-align: center; padding: 10px 8px; position: relative; }
+  .wizard-step-indicator .ws-num { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 2px solid #334155; color: #475569; background: #0a0e1a; margin-bottom: 4px; transition: all 0.2s; }
+  .wizard-step-indicator.active .ws-num { border-color: #3b82f6; color: #fff; background: #1e40af; box-shadow: 0 0 12px rgba(59,130,246,0.3); }
+  .wizard-step-indicator.completed .ws-num { border-color: #10b981; color: #fff; background: #059669; }
+  .wizard-step-indicator.skipped .ws-num { border-color: #475569; color: #64748b; background: #1e293b; }
+  .wizard-step-indicator .ws-label { display: block; font-size: 10px; color: #475569; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .wizard-step-indicator.active .ws-label { color: #60a5fa; }
+  .wizard-step-indicator.completed .ws-label { color: #10b981; }
+  .wizard-step-connector { width: 40px; display: flex; align-items: center; justify-content: center; padding-bottom: 18px; }
+  .wizard-step-connector .ws-line { height: 2px; width: 100%; background: #1e293b; }
+  .wizard-step-connector.done .ws-line { background: #10b981; }
+
+  .wizard-form { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 20px; margin-bottom: 12px; }
+  .wizard-form-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .wizard-form-title .wf-badge { font-size: 10px; background: rgba(59,130,246,0.15); color: #3b82f6; padding: 2px 8px; border-radius: 8px; }
+  .wizard-field { margin-bottom: 10px; }
+  .wizard-field label { display: block; font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .wizard-field input, .wizard-field select { width: 100%; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 12px; color: #e2e8f0; font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s; }
+  .wizard-field input:focus, .wizard-field select:focus { border-color: #3b82f6; }
+  .wizard-field input::placeholder { color: #334155; }
+  .wizard-field input.prefilled { border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.04); }
+  .wizard-field select { cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+
+  .wizard-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .wizard-btn { padding: 8px 18px; border-radius: 6px; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+  .wizard-btn-primary { background: #1e40af; color: #93c5fd; }
+  .wizard-btn-primary:hover { background: #1d4ed8; }
+  .wizard-btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+  .wizard-btn-secondary:hover { color: #fff; border-color: #475569; }
+  .wizard-btn-skip { background: transparent; color: #64748b; border: 1px solid #1e293b; }
+  .wizard-btn-skip:hover { color: #94a3b8; border-color: #334155; }
+  .wizard-btn-danger { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+  .wizard-btn-danger:hover { background: rgba(239,68,68,0.2); }
+  .wizard-btn-back { background: transparent; color: #64748b; border: 1px solid #1e293b; }
+  .wizard-btn-back:hover { color: #94a3b8; }
+
+  .wizard-existing { margin-bottom: 12px; }
+  .wizard-existing-title { font-size: 11px; font-weight: 600; color: #f59e0b; margin-bottom: 6px; }
+  .wizard-existing-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 6px; margin-bottom: 4px; cursor: pointer; transition: all 0.15s; font-size: 12px; }
+  .wizard-existing-item:hover { border-color: #3b82f6; background: rgba(59,130,246,0.04); }
+  .wizard-existing-item.selected { border-color: #10b981; background: rgba(16,185,129,0.06); }
+  .wizard-existing-item .wei-name { color: #e2e8f0; font-weight: 600; }
+  .wizard-existing-item .wei-detail { color: #64748b; margin-left: auto; font-size: 11px; }
+
+  .wizard-trace { background: #111827; border: 1px solid rgba(16,185,129,0.3); border-radius: 10px; padding: 16px 18px; margin-top: 12px; }
+  .wizard-trace-title { font-size: 13px; font-weight: 700; color: #10b981; margin-bottom: 10px; }
+  .wizard-trace-step { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .wizard-trace-step .wts-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .wizard-trace-step .wts-dot.done { background: #10b981; }
+  .wizard-trace-step .wts-dot.skipped { background: #475569; }
+  .wizard-trace-step .wts-dot.pending { background: #334155; }
+  .wizard-trace-step .wts-label { color: #cbd5e1; }
+  .wizard-trace-step .wts-result { color: #64748b; margin-left: auto; font-size: 11px; }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #10b981; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+
+  /* ── SPINNER ── */
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state { color: #334155; font-size: 13px; font-style: italic; padding: 20px 0; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ── SIDEBAR ── -->
+  <div class="sidebar">
+    <h2>Prescient AI</h2>
+    <div class="sub">Chief of Staff v2</div>
+
+    <div class="nav-item active" data-view="agent" onclick="switchView('agent')">
+      <div class="dot" style="background:#10b981"></div> Agent
+    </div>
+    <div class="nav-item" data-view="pipeline" onclick="switchView('pipeline')">
+      <div class="dot" style="background:#3b82f6"></div> Pipeline
+    </div>
+    <div class="nav-item" data-view="inbox" onclick="switchView('inbox')">
+      <div class="dot" style="background:#f59e0b"></div> Inbox
+      <span class="count" id="inboxCount">-</span>
+    </div>
+    <div class="nav-item" data-view="calendar" onclick="switchView('calendar')">
+      <div class="dot" style="background:#a855f7"></div> Calendar
+    </div>
+    <div class="nav-item" data-view="events" onclick="switchView('events')">
+      <div class="dot" style="background:#64748b"></div> Event Log
+    </div>
+
+    <div class="nav-divider"></div>
+
+    <div class="nav-item" onclick="window.location.href='/'">
+      <div class="dot" style="background:#334155"></div> Classic View
+    </div>
+
+    <div class="spacer"></div>
+    <div class="user">
+      <strong>Mike True</strong>
+      CEO, Prescient AI
+    </div>
+  </div>
+
+  <!-- ── CENTER ── -->
+  <div class="center">
+    <div class="center-scroll">
+      <div id="main">
+        <!-- Integration health bar -->
+        <div class="health-bar" id="healthBar">
+          <div class="health-item"><div class="health-dot checking"></div><span class="health-name">HubSpot</span><span class="health-status" id="hs-hubspot">checking...</span></div>
+          <div class="health-item"><div class="health-dot checking"></div><span class="health-name">Gmail</span><span class="health-status" id="hs-gmail">checking...</span></div>
+          <div class="health-item"><div class="health-dot checking"></div><span class="health-name">Calendar</span><span class="health-status" id="hs-calendar">checking...</span></div>
+          <div class="health-item"><div class="health-dot checking"></div><span class="health-name">Granola</span><span class="health-status" id="hs-granola">checking...</span></div>
+        </div>
+
+        <!-- Welcome screen (initial state) -->
+        <div id="welcomeScreen" class="welcome">
+          <h1>What do you need?</h1>
+          <div class="tagline">Tell the agent what to do. It will interpret, plan, and execute.</div>
+          <div class="welcome-grid">
+            <div class="welcome-cmd" onclick="runExample('postcall')">
+              <div class="cmd-label">Post-Call</div>
+              <div class="cmd-text">I just finished my call with HexClad. Review the Granola notes, generate a proposal, draft the follow-up email, and update the HubSpot stage.</div>
+            </div>
+            <div class="welcome-cmd" onclick="runExample('inbox')">
+              <div class="cmd-label">Inbox Triage</div>
+              <div class="cmd-text">Pull all emails today that need a reply.</div>
+            </div>
+            <div class="welcome-cmd" onclick="runExample('scheduling')">
+              <div class="cmd-label">Scheduling</div>
+              <div class="cmd-text">Loop in Jackson to help find a time with the ARMRA team next week.</div>
+            </div>
+            <div class="welcome-cmd" onclick="runExample('pipeline')">
+              <div class="cmd-label">Pipeline</div>
+              <div class="cmd-text">Show me the five highest-leverage pipeline actions for today.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Execution area (replaces welcome on command) -->
+        <div id="execArea" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- ── COMMAND DOCK (bottom) ── -->
+    <div class="command-dock">
+      <div class="command-chips" id="quickChips">
+        <span class="quick-chip" onclick="insertChip('I just got an email from ')">What should we do...</span>
+        <span class="quick-chip" onclick="insertChip('Show my latest email from ')">Latest email...</span>
+        <span class="quick-chip" onclick="insertChip('I just finished my call with ')">Post-call...</span>
+        <span class="quick-chip" onclick="insertChip('Pull all emails that need a reply')">Triage inbox</span>
+        <span class="quick-chip" onclick="insertChip('Loop in Jackson to schedule ')">Schedule...</span>
+        <span class="quick-chip" onclick="insertChip('Show me the five highest-leverage pipeline actions')">Top actions</span>
+        <span class="quick-chip" onclick="insertChip('Draft a follow-up email to ')">Draft email...</span>
+        <span class="quick-chip" onclick="insertChip('Create a proposal for ')">Proposal...</span>
+        <span class="quick-chip" onclick="insertChip('Create opportunity in HubSpot under Disco Complete for ')">Create opp...</span>
+        <span class="quick-chip" onclick="insertChip('Move  to Disco Complete and summarize Granola notes into HubSpot')">Stage + notes...</span>
+      </div>
+      <div class="command-row">
+        <textarea class="command-input" id="cmdInput" rows="1" placeholder="Type a command..." autocomplete="off"></textarea>
+        <button class="command-send" id="cmdBtn" onclick="sendCommand()">
+          <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT PANEL ── -->
+  <div class="right-panel">
+    <div class="panel-header">
+      <div class="pulse"></div>
+      <h3>Agent</h3>
+      <div class="badge">Online</div>
+    </div>
+    <div class="panel-tabs">
+      <div class="panel-tab active" data-tab="timeline" onclick="switchTab('timeline')">Timeline</div>
+      <div class="panel-tab" data-tab="context" onclick="switchTab('context')">Context</div>
+      <div class="panel-tab" data-tab="approvals" onclick="switchTab('approvals')">Approvals <span id="approvalBadge" style="display:none;font-size:9px;background:rgba(245,158,11,0.2);color:#f59e0b;padding:1px 5px;border-radius:6px;margin-left:4px">0</span></div>
+    </div>
+    <div class="panel-body" id="panelBody">
+      <div id="tabTimeline">
+        <div class="empty-state">No activity yet</div>
+      </div>
+      <div id="tabContext" style="display:none">
+        <div class="ctx-section">
+          <div class="ctx-label">Active Context</div>
+          <div class="empty-state" id="contextEmpty">Run a command to populate context</div>
+          <div id="contextContent" style="display:none"></div>
+        </div>
+      </div>
+      <div id="tabApprovals" style="display:none">
+        <div class="empty-state" id="approvalsEmpty">No pending approvals</div>
+        <div id="approvalsList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────
+let currentView = 'agent';
+let currentTab = 'timeline';
+let lastCommandId = null;
+let lastExecution = null;
+let pendingApprovals = [];
+let contextData = {};
+let timelinePolling = null;
+let integrationHealth = {};
+
+// ── WIZARD STATE ──
+let wizardState = null; // { type, command_id, raw_text, company_name, target_stage, target_stage_label, steps, current_step, existing_companies, existing_contacts, selected_contact, selected_company, contact_data, company_data, deal_data, trace }
+
+
+const EXAMPLES = {
+  postcall: "I just finished my call with HexClad. Review the Granola notes, generate a proposal, draft the follow-up email, and update the HubSpot stage.",
+  inbox: "Pull all emails today that need a reply.",
+  scheduling: "Loop in Jackson to help find a time with the ARMRA team next week.",
+  pipeline: "Show me the five highest-leverage pipeline actions for today.",
+};
+
+// Safe fetch: always returns parsed JSON or throws with endpoint + status + body info
+async function safeFetch(endpoint, opts = {}) {
+  let res;
+  try {
+    res = await fetch(endpoint, opts);
+  } catch (netErr) {
+    throw new Error(`Network error calling ${endpoint}: ${netErr.message}`);
+  }
+  const contentType = res.headers.get('content-type') || '';
+  let body;
+  const raw = await res.text();
+  if (contentType.includes('application/json')) {
+    try { body = JSON.parse(raw); } catch { body = { success: false, error: raw }; }
+  } else {
+    body = { success: false, error: raw.slice(0, 200) };
+  }
+  if (!res.ok) {
+    const msg = body?.error || body?.message || `HTTP ${res.status}`;
+    throw new Error(`${endpoint} returned ${res.status}: ${msg}`);
+  }
+  return body;
+}
+
+// ── INTEGRATION HEALTH ────────────────────────────────────────────
+async function loadIntegrationHealth() {
+  try {
+    const data = await safeFetch('/api/v2/projections?type=health');
+    if (data.success && data.integrations) {
+      integrationHealth = data.integrations;
+      for (const [name, info] of Object.entries(data.integrations)) {
+        const statusEl = document.getElementById('hs-' + name);
+        if (!statusEl) continue;
+        const dot = statusEl.parentElement.querySelector('.health-dot');
+        if (info.status === 'connected') {
+          dot.className = 'health-dot connected';
+          statusEl.textContent = 'connected';
+          statusEl.style.color = '#10b981';
+        } else {
+          dot.className = 'health-dot failed';
+          statusEl.textContent = 'failed';
+          statusEl.style.color = '#ef4444';
+          statusEl.title = info.error || '';
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[health] Failed to load integration health:', err.message);
+  }
+}
+
+// ── NAV ────────────────────────────────────────────────────────────
+function switchView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
+
+  const welcomeScreen = document.getElementById('welcomeScreen');
+  const execArea = document.getElementById('execArea');
+
+  if (view === 'agent') {
+    if (lastExecution) {
+      welcomeScreen.style.display = 'none';
+      execArea.style.display = 'block';
+    } else {
+      welcomeScreen.style.display = 'block';
+      execArea.style.display = 'none';
+    }
+  } else {
+    welcomeScreen.style.display = 'none';
+    execArea.style.display = 'block';
+    loadProjectionView(view);
+  }
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.panel-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('tabTimeline').style.display = tab === 'timeline' ? 'block' : 'none';
+  document.getElementById('tabContext').style.display = tab === 'context' ? 'block' : 'none';
+  document.getElementById('tabApprovals').style.display = tab === 'approvals' ? 'block' : 'none';
+}
+
+// ── COMMAND HANDLING ───────────────────────────────────────────────
+function runExample(key) {
+  document.getElementById('cmdInput').value = EXAMPLES[key];
+  sendCommand();
+}
+
+function insertChip(text) {
+  const input = document.getElementById('cmdInput');
+  input.value = text;
+  input.focus();
+  input.setSelectionRange(text.length, text.length);
+}
+
+document.getElementById('cmdInput').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+document.getElementById('cmdInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendCommand();
+  }
+});
+
+async function sendCommand() {
+  const input = document.getElementById('cmdInput');
+  const btn = document.getElementById('cmdBtn');
+  const text = input.value.trim();
+  if (!text) return;
+
+  btn.disabled = true;
+  input.disabled = true;
+
+  document.getElementById('welcomeScreen').style.display = 'none';
+  const execArea = document.getElementById('execArea');
+  execArea.style.display = 'block';
+  execArea.innerHTML = renderInterpreting(text);
+  scrollToBottom();
+
+  try {
+    const previewData = await safeFetch('/api/v2/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, mode: 'preview' }),
+    });
+
+    if (previewData.status === 'needs_clarification') {
+      execArea.innerHTML = renderClarification(previewData, text);
+      resetInput();
+      return;
+    }
+
+    // READ results — display data directly, no execution pipeline
+    if (previewData.status === 'read_result') {
+      execArea.innerHTML = renderReadResult(previewData);
+      resetInput();
+      scrollToBottom();
+      return;
+    }
+
+    if (previewData.status === 'read_error') {
+      execArea.innerHTML = renderError(previewData.error || 'Read failed', text);
+      resetInput();
+      return;
+    }
+
+    // Recommendation results — context-aware strategic advice
+    if (previewData.status === 'recommendation') {
+      execArea.innerHTML = renderRecommendation(previewData);
+      resetInput();
+      scrollToBottom();
+      return;
+    }
+
+    if (previewData.status === 'recommendation_error') {
+      execArea.innerHTML = renderError(previewData.error || 'Recommendation failed', text);
+      resetInput();
+      return;
+    }
+
+    // Wizard mode: CRM creation flows
+    if (previewData.status === 'wizard') {
+      wizardState = {
+        ...previewData.wizard,
+        command_id: previewData.command_id,
+        raw_text: previewData.raw_text,
+        current_step: 0,
+        selected_contact: null,
+        selected_company: null,
+        contact_data: {},
+        company_data: { name: previewData.wizard.company_name || '' },
+        deal_data: {
+          dealname: previewData.wizard.company_name || '',
+          dealstage: previewData.wizard.target_stage || '',
+        },
+        trace: [],
+      };
+      execArea.innerHTML = renderWizard();
+      resetInput();
+      scrollToBottom();
+      return;
+    }
+
+    lastCommandId = previewData.command_id;
+    const intent = previewData.intent;
+    const plan = previewData.plan;
+
+    execArea.innerHTML = renderIntentAndPlan(intent, plan, text);
+    updateContext(intent);
+    scrollToBottom();
+
+    const hasApprovals = plan?.steps?.some(s => s.approval_required);
+
+    if (hasApprovals) {
+      execArea.innerHTML = renderPlanWithApprovals(intent, plan, text);
+      scrollToBottom();
+      lastExecution = { intent, plan, text, status: 'waiting_approval' };
+      addApprovalsToPending(plan);
+      return;
+    }
+
+    await executeCommand(text, intent, plan);
+
+  } catch (err) {
+    execArea.innerHTML = renderError(err.message, text);
+  } finally {
+    resetInput();
+  }
+}
+
+async function executeCommand(text, intent, plan) {
+  const execArea = document.getElementById('execArea');
+  execArea.innerHTML = renderExecuting(intent, plan);
+  scrollToBottom();
+
+  const data = await safeFetch('/api/v2/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+
+  lastExecution = data;
+  lastCommandId = data.command_id;
+  execArea.innerHTML = renderResult(data);
+  scrollToBottom();
+  loadTimeline();
+  if (data.intent) updateContext(data.intent);
+}
+
+async function approveAndExecute() {
+  if (!lastExecution) return;
+  const { text, intent, plan } = lastExecution;
+  pendingApprovals = [];
+  updateApprovalBadge();
+  document.getElementById('approvalsList').innerHTML = '';
+  document.getElementById('approvalsEmpty').style.display = 'block';
+  await executeCommand(text, intent, plan);
+}
+
+function denyExecution() {
+  pendingApprovals = [];
+  updateApprovalBadge();
+  document.getElementById('approvalsList').innerHTML = '';
+  document.getElementById('approvalsEmpty').style.display = 'block';
+  lastExecution = null;
+  document.getElementById('execArea').innerHTML = `
+    <div class="intent-banner" style="border-color:rgba(239,68,68,0.2)">
+      <div class="intent-row">
+        <div class="intent-badge low">Cancelled</div>
+        <div class="intent-label">Execution denied</div>
+      </div>
+      <div class="intent-sub">The plan was not executed. Try a different command.</div>
+    </div>`;
+  showToast('Execution cancelled');
+}
+
+function resetInput() {
+  const input = document.getElementById('cmdInput');
+  const btn = document.getElementById('cmdBtn');
+  btn.disabled = false;
+  input.disabled = false;
+  input.value = '';
+  input.style.height = 'auto';
+  input.focus();
+}
+
+// ── RENDER FUNCTIONS ───────────────────────────────────────────────
+
+function renderInterpreting(text) {
+  return `
+    <div class="intent-banner" style="border-color:rgba(59,130,246,0.2)">
+      <div class="intent-row">
+        <span class="spinner"></span>
+        <div class="intent-label" style="color:#94a3b8">Interpreting command...</div>
+      </div>
+      <div class="intent-sub" style="margin-top:4px">"${esc(text)}"</div>
+    </div>`;
+}
+
+function renderRecommendation(data) {
+  const intent = data.intent || {};
+  const rec = data.recommendation || {};
+  const ai = rec.recommendation || {};
+  const intentLabel = formatIntent(intent.intent);
+  const confClass = intent.confidence >= 0.7 ? 'high' : intent.confidence >= 0.4 ? 'medium' : 'low';
+
+  const urgencyColors = { high: '#ef4444', medium: '#f59e0b', low: '#10b981' };
+  const urgencyColor = urgencyColors[ai.urgency] || urgencyColors.medium;
+
+  let html = `
+    <div class="intent-banner">
+      <div class="intent-row">
+        <span class="intent-badge ${confClass}">${Math.round((intent.confidence || 0) * 100)}%</span>
+        <span class="intent-label">${esc(intentLabel)}</span>
+      </div>
+      <div class="intent-sub">"${esc(data.raw_text || '')}"</div>
+      ${intent.entities?.length ? `<div class="intent-entities" style="margin-top:6px">${intent.entities.map(e => `<span class="entity-chip">${esc(e.entity_type)}: ${esc(e.resolved_name)}</span>`).join('')}</div>` : ''}
+    </div>`;
+
+  // Recommendation card
+  html += `
+    <div style="background:linear-gradient(135deg,#111827,#1a1f36);border:1px solid #2d3748;border-radius:12px;padding:20px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:20px">💡</span>
+        <span style="font-size:16px;font-weight:700;color:#fff">Recommendation</span>
+        <span style="margin-left:auto;font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;background:rgba(${ai.urgency === 'high' ? '239,68,68' : ai.urgency === 'low' ? '16,185,129' : '245,158,11'},0.15);color:${urgencyColor}">${esc((ai.urgency || 'medium').toUpperCase())} URGENCY</span>
+      </div>
+      <div style="font-size:15px;font-weight:600;color:#f0f4f8;line-height:1.5;margin-bottom:12px">${esc(ai.recommended_action || '')}</div>
+      <div style="font-size:13px;color:#94a3b8;line-height:1.6;margin-bottom:14px">${esc(ai.reasoning || '')}</div>
+      ${ai.key_context ? `<div style="font-size:12px;color:#64748b;border-left:3px solid #3b82f6;padding-left:10px;margin-bottom:14px">${esc(ai.key_context)}</div>` : ''}
+      ${ai.tone ? `<div style="font-size:11px;color:#475569;margin-bottom:12px">Suggested tone: <span style="color:#60a5fa">${esc(ai.tone)}</span></div>` : ''}
+      ${ai.deal_stage_suggestion ? `<div style="font-size:12px;color:#f59e0b;margin-bottom:12px">💎 Stage suggestion: ${esc(ai.deal_stage_suggestion)}</div>` : ''}
+    </div>`;
+
+  // Next steps
+  if (ai.suggested_next_steps?.length) {
+    html += `
+      <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:16px;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Suggested Next Steps</div>`;
+    ai.suggested_next_steps.forEach((step, i) => {
+      html += `<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:700;color:#3b82f6;min-width:18px">${i + 1}.</span>
+        <span style="font-size:13px;color:#e2e8f0;line-height:1.5">${esc(step)}</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Context sources
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">`;
+
+  // Email context
+  const threads = rec.email_context?.threads || [];
+  html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">📧 Email (${rec.email_context?.thread_count || 0} threads)</div>`;
+  if (threads.length > 0) {
+    threads.slice(0, 2).forEach(t => {
+      html += `<div style="margin-bottom:6px">
+        <div style="font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.subject || '(no subject)')}</div>
+        <div style="font-size:11px;color:#64748b">${esc(t.from || '')}</div>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:12px;color:#475569">No recent threads</div>`;
+  }
+  html += `</div>`;
+
+  // Deal context
+  const deal = rec.deal_context?.primary_deal;
+  html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">📊 CRM Deal</div>`;
+  if (deal) {
+    html += `<div style="font-size:12px;font-weight:600;color:#fff;margin-bottom:4px">${esc(deal.name)}</div>
+      <div style="font-size:11px;color:#10b981;margin-bottom:2px">Stage: ${esc(deal.stage_label || deal.stage)}</div>
+      ${deal.amount ? `<div style="font-size:11px;color:#f59e0b">$${esc(deal.amount)}</div>` : ''}
+      ${deal.next_step ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px">Next: ${esc(deal.next_step.slice(0, 60))}</div>` : ''}`;
+  } else {
+    html += `<div style="font-size:12px;color:#475569">No deals found</div>`;
+  }
+  html += `</div>`;
+
+  // Meeting context
+  const notes = rec.meeting_context?.notes || [];
+  html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">📅 Meetings</div>`;
+  if (notes.length > 0) {
+    notes.slice(0, 2).forEach(n => {
+      html += `<div style="margin-bottom:4px">
+        <div style="font-size:12px;font-weight:600;color:#fff">${esc(n.title || 'Meeting')}</div>
+        <div style="font-size:11px;color:#64748b">${esc(n.created_at ? new Date(n.created_at).toLocaleDateString() : '')}</div>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:12px;color:#475569">No recent meetings</div>`;
+  }
+  html += `</div>`;
+
+  // Contacts
+  const contacts = rec.company_context?.contacts || [];
+  html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">👤 Contacts</div>`;
+  if (contacts.length > 0) {
+    contacts.slice(0, 3).forEach(c => {
+      html += `<div style="font-size:12px;color:#e2e8f0;margin-bottom:2px">${esc(c.name)}${c.title ? ` <span style="color:#64748b">(${esc(c.title)})</span>` : ''}</div>`;
+    });
+  } else {
+    html += `<div style="font-size:12px;color:#475569">No contacts found</div>`;
+  }
+  html += `</div></div>`;
+
+  // Action buttons
+  const actions = rec.actions || [];
+  if (actions.length > 0) {
+    html += `<div style="display:flex;gap:8px;flex-wrap:wrap">`;
+    actions.forEach(a => {
+      html += `<button onclick="insertChip('${esc(a.command)}');document.getElementById('cmdInput').focus()"
+        style="font-size:12px;padding:8px 14px;border-radius:8px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.15s"
+        onmouseover="this.style.borderColor='#3b82f6';this.style.color='#60a5fa'" onmouseout="this.style.borderColor='#334155';this.style.color='#e2e8f0'">
+        <span>${a.icon || ''}</span> ${esc(a.label)}
+      </button>`;
+    });
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+function renderReadResult(data) {
+  const intent = data.intent || {};
+  const rr = data.read_result || {};
+  const items = rr.items || [];
+  const intentLabel = formatIntent(intent.intent);
+  const confClass = intent.confidence >= 0.7 ? 'high' : intent.confidence >= 0.4 ? 'medium' : 'low';
+
+  let html = `
+    <div class="intent-banner">
+      <div class="intent-row">
+        <span class="intent-badge ${confClass}">${Math.round((intent.confidence || 0) * 100)}%</span>
+        <span class="intent-label">${esc(intentLabel)}</span>
+      </div>
+      <div class="intent-sub">"${esc(data.raw_text || '')}"</div>
+      ${intent.entities?.length ? `<div class="intent-entities" style="margin-top:6px">${intent.entities.map(e => `<span class="entity-chip">${esc(e.entity_type)}: ${esc(e.resolved_name)}</span>`).join('')}</div>` : ''}
+    </div>`;
+
+  if (items.length === 0) {
+    html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:20px;color:#94a3b8;text-align:center">${esc(rr.message || 'No results found.')}</div>`;
+    return html;
+  }
+
+  if (rr.type === 'email') {
+    html += `<div style="font-size:12px;color:#64748b;margin-bottom:10px">${esc(rr.message)}</div>`;
+    items.forEach(t => {
+      const dateStr = t.date ? new Date(t.date).toLocaleString() : '';
+      html += `
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+            <div style="font-size:14px;font-weight:600;color:#fff;flex:1">${esc(t.subject || '(no subject)')}</div>
+            <a href="https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(t.thread_id)}" target="_blank" rel="noopener"
+               style="font-size:11px;background:#1e40af;color:#93c5fd;padding:4px 10px;border-radius:6px;white-space:nowrap;text-decoration:none">Open ↗</a>
+          </div>
+          <div style="font-size:12px;color:#60a5fa;margin-bottom:4px">${esc(t.from)}</div>
+          <div style="font-size:11px;color:#475569;margin-bottom:6px">${esc(dateStr)}</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:1.5">${esc(t.snippet)}</div>
+        </div>`;
+    });
+  } else if (rr.type === 'deal') {
+    html += `<div style="font-size:12px;color:#64748b;margin-bottom:10px">${esc(rr.message)}</div>`;
+    items.forEach(d => {
+      html += `
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:6px">${esc(d.name)}</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#94a3b8">
+            <span>Stage: <span style="color:#10b981">${esc(d.stage)}</span></span>
+            ${d.amount ? `<span>Amount: <span style="color:#f59e0b">$${esc(d.amount)}</span></span>` : ''}
+            ${d.close_date ? `<span>Close: ${esc(d.close_date)}</span>` : ''}
+          </div>
+          ${d.next_step ? `<div style="font-size:12px;color:#64748b;margin-top:6px">Next: ${esc(d.next_step)}</div>` : ''}
+        </div>`;
+    });
+  } else if (rr.type === 'pipeline') {
+    html += `<div style="font-size:12px;color:#64748b;margin-bottom:10px">${esc(rr.message)}</div>`;
+    html += `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="border-bottom:1px solid #1e293b;color:#64748b;text-align:left">
+        <th style="padding:8px">Deal</th><th style="padding:8px">Stage</th><th style="padding:8px">Amount</th><th style="padding:8px">Close Date</th>
+      </tr></thead><tbody>`;
+    items.forEach(d => {
+      html += `<tr style="border-bottom:1px solid #1e293b">
+        <td style="padding:8px;color:#fff;font-weight:500">${esc(d.name)}</td>
+        <td style="padding:8px;color:#10b981">${esc(d.stage)}</td>
+        <td style="padding:8px;color:#f59e0b">${d.amount ? '$' + esc(d.amount) : '—'}</td>
+        <td style="padding:8px;color:#94a3b8">${esc(d.close_date || '—')}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  } else if (rr.type === 'contact') {
+    html += `<div style="font-size:12px;color:#64748b;margin-bottom:10px">${esc(rr.message)}</div>`;
+    items.forEach(c => {
+      html += `
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:8px">
+          <div style="font-size:14px;font-weight:600;color:#fff;margin-bottom:4px">${esc(c.name || 'Unknown')}</div>
+          <div style="font-size:12px;color:#94a3b8">
+            ${c.email ? `<div>${esc(c.email)}</div>` : ''}
+            ${c.title ? `<div>${esc(c.title)}${c.company ? ' at ' + esc(c.company) : ''}</div>` : ''}
+            ${c.phone ? `<div>${esc(c.phone)}</div>` : ''}
+          </div>
+        </div>`;
+    });
+  } else {
+    html += `<div style="background:#111827;border:1px solid #1e293b;border-radius:10px;padding:16px;font-size:12px;color:#94a3b8"><pre style="margin:0;white-space:pre-wrap">${esc(JSON.stringify(rr, null, 2))}</pre></div>`;
+  }
+
+  return html;
+}
+
+function renderClarification(data, text) {
+  const rawText = data.raw_text || text;
+  const clarifications = data.clarifications || [];
+  const validatedEntities = data.validated_entities || [];
+
+  let html = `
+    <div class="original-command">
+      <div class="original-command-label">Original command</div>
+      <div class="original-command-text">"${esc(rawText)}"</div>
+    </div>`;
+
+  // Show entity resolution status if we have validated entities
+  if (validatedEntities.length) {
+    html += `<div class="entity-resolution">
+      <div class="entity-resolution-title">Entity Resolution</div>`;
+    for (const v of validatedEntities) {
+      const statusLabel = v.match_status === 'exact' ? 'matched' : v.match_status === 'partial' ? 'partial match' : v.match_status === 'ambiguous' ? 'ambiguous' : 'not found';
+      html += `
+      <div class="entity-row ${esc(v.match_status)}">
+        <div class="entity-match-dot ${esc(v.match_status)}"></div>
+        <span class="entity-name">${esc(v.resolved_name)}</span>
+        <span class="entity-arrow">&rarr;</span>
+        <span class="entity-deal">${v.hubspot_deal_name ? esc(v.hubspot_deal_name) : statusLabel}</span>
+        ${v.hubspot_current_stage ? `<span class="entity-stage">${esc(STAGE_LABELS_UI[v.hubspot_current_stage] || v.hubspot_current_stage)}</span>` : ''}
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Show each clarification question
+  for (const clar of clarifications) {
+    const opts = clar.options || [];
+    html += `
+    <div class="intent-banner" style="border-color:rgba(245,158,11,0.3)">
+      <div class="intent-row">
+        <div class="intent-badge medium">Clarification</div>
+        <div class="intent-label">${esc(clar.question)}</div>
+      </div>
+      ${clar.entity_name ? `<div class="intent-sub" style="margin-top:4px">For entity: "${esc(clar.entity_name)}"</div>` : ''}
+      ${data.intent ? `<div style="margin-top:8px"><span style="font-size:11px;color:#475569">Detected: ${esc(data.intent.intent)} (${Math.round((data.intent.confidence || 0) * 100)}% confidence)</span></div>` : ''}
+      ${opts.length ? `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${opts.map(o => `<span class="quick-chip" onclick="insertChip('${esc(o.value)}')">${esc(o.label)}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }
+
+  if (!clarifications.length) {
+    html += `
+    <div class="intent-banner" style="border-color:rgba(245,158,11,0.3)">
+      <div class="intent-row">
+        <div class="intent-badge medium">Clarification</div>
+        <div class="intent-label">Could you rephrase that?</div>
+      </div>
+    </div>`;
+  }
+
+  return html;
+}
+
+function renderIntentAndPlan(intent, plan, text) {
+  const conf = Math.round((intent.confidence || 0) * 100);
+  const confLevel = conf >= 80 ? 'high' : conf >= 50 ? 'medium' : 'low';
+  const rawText = intent.raw_text || text;
+
+  // Always show original command
+  let html = '';
+  if (rawText) {
+    html += `
+    <div class="original-command">
+      <div class="original-command-label">Original command</div>
+      <div class="original-command-text">"${esc(rawText)}"</div>
+    </div>`;
+  }
+
+  html += `
+    <div class="intent-banner">
+      <div class="intent-row">
+        <div class="intent-badge ${confLevel}">${conf}%</div>
+        <div class="intent-label">${formatIntent(intent.intent)}</div>
+        <span class="exec-meta">${esc(intent.mode || 'execute')} mode</span>
+      </div>
+      ${intent.entities?.length ? `<div class="intent-entities" style="margin-top:6px">${intent.entities.map(e => `<span class="entity-chip">${esc(e.entity_type)}: ${esc(e.resolved_name || e.raw_text)}</span>`).join('')}</div>` : ''}
+    </div>`;
+
+  // Show entity validation details for stage changes
+  const validatedEntities = intent.parameters?._validated_entities;
+  if (validatedEntities?.length) {
+    html += renderEntityResolution(validatedEntities);
+    html += renderStageChangeSummary(validatedEntities, intent.parameters);
+  }
+
+  if (plan?.steps?.length) {
+    html += `
+    <div class="exec-trace">
+      <div class="exec-header">
+        <div class="section-title">Execution Plan</div>
+        <div class="exec-status running"><span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span> Preparing</div>
+        <span class="exec-meta">${plan.steps.length} steps</span>
+      </div>
+      ${plan.steps.map((s, i) => `
+      <div class="exec-step">
+        <div class="exec-step-line">
+          <div class="exec-step-dot pending"></div>
+          <div class="exec-step-wire"></div>
+        </div>
+        <div class="exec-step-card">
+          <div class="step-top">
+            <span class="step-seq">${s.sequence || i + 1}</span>
+            <span class="step-tool">${esc(s.tool)}</span>
+            <span class="step-status-label pending">pending</span>
+          </div>
+          <div class="step-desc">${esc(s.description)}</div>
+          ${s.approval_required ? '<div style="margin-top:4px;font-size:10px;color:#f59e0b;font-weight:600">Requires approval</div>' : ''}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  return html;
+}
+
+function renderPlanWithApprovals(intent, plan, text) {
+  let html = renderIntentAndPlan(intent, plan, text);
+  const approvalSteps = plan.steps.filter(s => s.approval_required);
+  const labels = { 'hubspot.update_deal': 'HubSpot Deal Update', 'email.send': 'Send Email', 'calendar.create_event': 'Create Calendar Event' };
+  const validatedEntities = intent.parameters?._validated_entities;
+  const isStageWithNotes = intent.parameters?._workflow_type === 'stage_update_with_notes';
+  const granolaPreview = intent.parameters?._granola_preview;
+
+  html += `
+    <div class="approval-bubble">
+      <div class="approval-header">
+        <span class="approval-icon">&#9888;</span>
+        <span class="approval-title">Approval Required</span>
+      </div>`;
+
+  // Enhanced preview for stage_update_with_notes workflow
+  if (isStageWithNotes) {
+    html += `
+      <div class="approval-desc">
+        This workflow will update the deal stage, summarize the Granola meeting notes into HubSpot, and extract action items into Next Steps.
+      </div>`;
+
+    // Granola note status
+    if (granolaPreview) {
+      if (granolaPreview.found) {
+        html += `
+        <div style="background:#0a0e1a;border:1px solid rgba(16,185,129,0.2);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Granola Note Found</div>
+          <div style="font-size:12px;color:#e2e8f0;font-weight:600">${esc(granolaPreview.title)}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px">${new Date(granolaPreview.created_at).toLocaleDateString()} &middot; ${(granolaPreview.attendees || []).join(', ')}</div>
+        </div>`;
+      } else {
+        html += `
+        <div style="background:#0a0e1a;border:1px solid rgba(245,158,11,0.2);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:10px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">No Granola Note Found</div>
+          <div style="font-size:11px;color:#94a3b8">No recent meeting note was found for this company. The agent will attempt to find one during execution.</div>
+        </div>`;
+      }
+    }
+
+    // Execution trace preview
+    html += `
+      <div style="background:#0a0e1a;border-radius:6px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Execution Plan</div>
+        <div style="font-size:12px;color:#cbd5e1;line-height:2">
+          <div><span style="color:#3b82f6">1.</span> Resolve deal in HubSpot</div>
+          <div><span style="color:#3b82f6">2.</span> Fetch Granola meeting notes</div>
+          <div><span style="color:#3b82f6">3.</span> Summarize meeting (commercial content only)</div>
+          <div><span style="color:#f59e0b">4.</span> Update Deal Stage <span style="color:#64748b">(requires approval)</span></div>
+          <div><span style="color:#3b82f6">5.</span> Append summary to HubSpot notes</div>
+          <div><span style="color:#f59e0b">6.</span> Update Next Steps with action items <span style="color:#64748b">(requires approval)</span></div>
+        </div>
+      </div>`;
+
+    // Fields that WILL and WILL NOT be changed
+    html += `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="background:#0a0e1a;border:1px solid rgba(16,185,129,0.15);border-radius:6px;padding:8px 10px">
+          <div style="font-size:10px;font-weight:700;color:#10b981;margin-bottom:4px">WILL UPDATE</div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.6">Deal Stage<br>Next Steps<br>HubSpot Notes (append)</div>
+        </div>
+        <div style="background:#0a0e1a;border:1px solid rgba(239,68,68,0.15);border-radius:6px;padding:8px 10px">
+          <div style="font-size:10px;font-weight:700;color:#ef4444;margin-bottom:4px">WILL NOT CHANGE</div>
+          <div style="font-size:11px;color:#94a3b8;line-height:1.6">Deal Name<br>Amount<br>Close Date<br>Owner</div>
+        </div>
+      </div>`;
+  } else {
+    html += `
+      <div class="approval-desc">
+        This plan includes ${approvalSteps.length} step${approvalSteps.length > 1 ? 's' : ''} that ${approvalSteps.length > 1 ? 'require' : 'requires'} your approval before execution:
+      </div>
+      <div class="approval-detail">${approvalSteps.map(s => `${labels[s.tool] || s.tool}: ${s.description}`).join('\n')}</div>`;
+  }
+
+  // For stage changes with validated entities, show the exact deals + stages
+  const hasStageChange = approvalSteps.some(s => s.tool === 'hubspot.update_deal');
+  if (hasStageChange && validatedEntities?.length) {
+    html += renderStageChangeSummary(validatedEntities, intent.parameters);
+  } else if (hasStageChange && !isStageWithNotes) {
+    html += `
+      <div class="approval-chips">
+        <span class="quick-chip" onclick="setApprovalOption('stage','qualifiedtobuy')">Qualified to Buy</span>
+        <span class="quick-chip" onclick="setApprovalOption('stage','presentationscheduled')">Presentation Scheduled</span>
+        <span class="quick-chip" onclick="setApprovalOption('stage','decisionmakerboughtin')">Decision Maker Bought In</span>
+        <span class="quick-chip" onclick="setApprovalOption('stage','contractsent')">Contract Sent</span>
+        <span class="quick-chip" onclick="setApprovalOption('stage','closedwon')">Closed Won</span>
+      </div>`;
+  }
+
+  html += `
+      <div class="approval-actions">
+        <button class="approval-btn approval-approve" onclick="approveAndExecute()">Approve &amp; Execute</button>
+        <button class="approval-btn approval-deny" onclick="denyExecution()">Deny</button>
+        <button class="approval-btn approval-edit" onclick="document.getElementById('cmdInput').focus()">Edit Command</button>
+      </div>
+    </div>`;
+
+  return html;
+}
+
+function renderExecuting(intent, plan) {
+  let html = renderIntentAndPlan(intent, plan, '');
+  html = html.replace('Preparing</div>', 'Executing</div>');
+  html = html.replace('exec-step-dot pending', 'exec-step-dot running');
+  html = html.replace('step-status-label pending">pending', 'step-status-label running">running');
+  return html;
+}
+
+function renderResult(data) {
+  const exec = data.execution || {};
+  const intent = data.intent || {};
+  const conf = Math.round((intent.confidence || 0) * 100);
+  const confLevel = conf >= 80 ? 'high' : conf >= 50 ? 'medium' : 'low';
+  const statusClass = exec.status === 'completed' ? 'completed' : exec.status === 'failed' ? 'failed' : 'running';
+  const rawText = data.raw_text || intent.raw_text || '';
+
+  let html = '';
+
+  // Always show original command
+  if (rawText) {
+    html += `
+    <div class="original-command">
+      <div class="original-command-label">Original command</div>
+      <div class="original-command-text">"${esc(rawText)}"</div>
+    </div>`;
+  }
+
+  html += `
+    <div class="intent-banner" style="border-color:${exec.status === 'completed' ? 'rgba(16,185,129,0.2)' : exec.status === 'failed' ? 'rgba(239,68,68,0.2)' : 'rgba(59,130,246,0.2)'}">
+      <div class="intent-row">
+        <div class="intent-badge ${confLevel}">${conf}%</div>
+        <div class="intent-label">${formatIntent(intent.intent)}</div>
+        <span class="exec-meta">${exec.duration_ms ? (exec.duration_ms / 1000).toFixed(1) + 's' : ''}</span>
+      </div>
+      ${intent.entities?.length ? `<div class="intent-entities" style="margin-top:6px">${intent.entities.map(e => `<span class="entity-chip">${esc(e.entity_type)}: ${esc(e.resolved_name || e.raw_text)}</span>`).join('')}</div>` : ''}
+    </div>`;
+
+  // Show entity validation details if present
+  const validatedEntities = intent.parameters?._validated_entities;
+  if (validatedEntities?.length) {
+    html += renderEntityResolution(validatedEntities);
+  }
+
+  html += `
+    <div class="exec-trace">
+      <div class="exec-header">
+        <div class="section-title">Execution</div>
+        <div class="exec-status ${statusClass}">${exec.status || 'unknown'}</div>
+        <span class="exec-meta">${exec.steps_completed || 0}/${exec.steps_total || 0} steps</span>
+      </div>`;
+
+  if (exec.results) {
+    const stepIds = Object.keys(exec.results);
+    stepIds.forEach((stepId, i) => {
+      const output = exec.results[stepId];
+      const hasOutput = output && Object.keys(output).length > 0;
+      html += `
+      <div class="exec-step">
+        <div class="exec-step-line">
+          <div class="exec-step-dot completed"></div>
+          <div class="exec-step-wire"></div>
+        </div>
+        <div class="exec-step-card completed">
+          <div class="step-top">
+            <span class="step-seq">${i + 1}</span>
+            <span class="step-tool">${esc(stepId)}</span>
+            <span class="step-status-label completed">done</span>
+          </div>
+          ${hasOutput ? `<div class="step-desc" style="color:#64748b;font-size:11px;margin-top:3px">${summarizeOutput(output)}</div>` : ''}
+        </div>
+      </div>`;
+    });
+
+    if (exec.steps_failed > 0) {
+      html += `
+      <div class="exec-step">
+        <div class="exec-step-line"><div class="exec-step-dot failed"></div><div class="exec-step-wire"></div></div>
+        <div class="exec-step-card failed">
+          <div class="step-top"><span class="step-status-label failed">${exec.steps_failed} step${exec.steps_failed > 1 ? 's' : ''} failed</span></div>
+        </div>
+      </div>`;
+    }
+  }
+  html += '</div>';
+
+  if (exec.artifacts?.length) {
+    html += '<div class="section"><div class="section-header"><div class="section-title">Artifacts</div><div class="section-count">' + exec.artifacts.length + '</div></div>';
+    exec.artifacts.forEach(a => {
+      const typeClass = a.type === 'proposal' ? 'proposal' : a.type === 'email_draft' ? 'email' : 'analysis';
+      html += `
+      <div class="artifact">
+        <div class="artifact-header">
+          <div class="artifact-type ${typeClass}">${esc(a.type)}</div>
+          <span style="font-size:11px;color:#475569">${esc(a.tool)}</span>
+          <div class="artifact-actions">
+            <button class="quick-chip" onclick="copyArtifact(this)" data-content="${esc(JSON.stringify(a.data))}">Copy</button>
+          </div>
+        </div>
+        <div class="artifact-body">${esc(formatArtifact(a))}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function renderError(message, text) {
+  return `
+    <div class="intent-banner" style="border-color:rgba(239,68,68,0.3)">
+      <div class="intent-row">
+        <div class="intent-badge low">Error</div>
+        <div class="intent-label">Command failed</div>
+      </div>
+      <div class="intent-sub" style="margin-top:4px">${esc(message)}</div>
+      ${text ? `<div style="margin-top:8px;font-size:11px;color:#475569">Command: "${esc(text)}"</div>` : ''}
+    </div>`;
+}
+
+const STAGE_LABELS_UI = {
+  'closedlost': 'Closed Lost',
+  'closedwon': 'Closed Won',
+  'contractsent': 'Contract Sent',
+  '227588384': 'Committed',
+  'decisionmakerboughtin': 'Negotiating',
+  '123162712': 'Demo Completed',
+  'appointmentscheduled': 'Demo Scheduled',
+  '93124525': 'Disco Booked',
+  '998751160': 'Disco Complete',
+  'presentationscheduled': 'Presentation Scheduled',
+  'qualifiedtobuy': 'Qualified to Buy',
+  '60237411': 'Nurture',
+};
+
+function renderEntityResolution(validatedEntities) {
+  let html = `<div class="entity-resolution">
+    <div class="entity-resolution-title">Entity Resolution</div>`;
+  for (const v of validatedEntities) {
+    const statusLabel = v.match_status === 'exact' ? 'matched' : v.match_status === 'partial' ? 'partial match' : v.match_status === 'ambiguous' ? 'ambiguous' : 'not found';
+    html += `
+    <div class="entity-row ${esc(v.match_status)}">
+      <div class="entity-match-dot ${esc(v.match_status)}"></div>
+      <span class="entity-name">${esc(v.name)}</span>
+      <span class="entity-arrow">&rarr;</span>
+      <span class="entity-deal">${v.deal_name ? esc(v.deal_name) : statusLabel}</span>
+      ${v.current_stage_label ? `<span class="entity-stage">${esc(v.current_stage_label)}</span>` : ''}
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderStageChangeSummary(validatedEntities, parameters) {
+  const targetStage = parameters?.target_stage || '';
+  const targetLabel = STAGE_LABELS_UI[targetStage] || targetStage;
+  const isClosedLost = targetStage === 'closedlost';
+  const isClosedWon = targetStage === 'closedwon';
+
+  let html = `
+    <div class="stage-change-summary">
+      <div class="stage-change-header">
+        <span>Stage Change</span>
+        <span class="stage-change-count">${validatedEntities.length} deal${validatedEntities.length !== 1 ? 's' : ''}</span>
+      </div>`;
+
+  for (const v of validatedEntities) {
+    html += `
+      <div class="stage-change-deal">
+        <span class="entity-name" style="min-width:120px">${esc(v.deal_name || v.name)}</span>
+        <span class="stage-from">${esc(v.current_stage_label || 'Unknown')}</span>
+        <span class="stage-arrow-icon">&rarr;</span>
+        <span class="stage-to ${isClosedWon ? 'closedwon' : ''}">${esc(targetLabel)}</span>
+      </div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+/** Render integration error state for a projection view */
+function renderIntegrationError(source, errorMsg) {
+  const sourceLabels = { hubspot: 'HubSpot', gmail: 'Gmail', calendar: 'Google Calendar', granola: 'Granola' };
+  return `
+    <div class="integration-error">
+      <div class="ie-icon">&#9888;</div>
+      <div class="ie-source">${esc(sourceLabels[source] || source)} Integration Failed</div>
+      <div class="ie-title">Unable to load real data</div>
+      <div class="ie-message">${esc(errorMsg)}</div>
+    </div>`;
+}
+
+// ── PROJECTION VIEWS ───────────────────────────────────────────────
+
+async function loadProjectionView(view) {
+  const area = document.getElementById('execArea');
+  area.innerHTML = '<div style="padding:40px;text-align:center"><span class="spinner"></span></div>';
+
+  try {
+    if (view === 'pipeline') {
+      const data = await safeFetch('/api/v2/projections?type=pipeline');
+      if (!data.success) {
+        area.innerHTML = renderIntegrationError(data.source || 'hubspot', data.error || 'Unknown error');
+      } else {
+        area.innerHTML = renderPipelineView(data);
+      }
+    } else if (view === 'inbox') {
+      const data = await safeFetch('/api/v2/projections?type=inbox');
+      if (!data.success) {
+        area.innerHTML = renderIntegrationError(data.source || 'gmail', data.error || 'Unknown error');
+      } else {
+        area.innerHTML = renderInboxView(data);
+      }
+    } else if (view === 'calendar') {
+      const data = await safeFetch('/api/v2/projections?type=calendar');
+      if (!data.success) {
+        area.innerHTML = renderIntegrationError(data.source || 'calendar', data.error || 'Unknown error');
+      } else {
+        area.innerHTML = renderCalendarView(data);
+      }
+    } else if (view === 'events') {
+      const data = await safeFetch('/api/v2/events?limit=100');
+      area.innerHTML = renderEventsView(data);
+    }
+  } catch (err) {
+    area.innerHTML = renderError(err.message);
+  }
+}
+
+function renderPipelineView(data) {
+  let html = `
+    <div style="margin-bottom:16px">
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Active Sales Pipeline</h1>
+      <div style="font-size:12px;color:#64748b">${data.total_count || 0} active deals &middot; $${(data.total_value || 0).toLocaleString()} total value &middot; ${data.excluded_count || 0} excluded</div>
+    </div>`;
+
+  if (!(data.stages || []).length) {
+    html += '<div class="empty-state">No active deals found</div>';
+    return html;
+  }
+
+  const stages = data.stages || [];
+  for (const stage of stages) {
+    if (!stage.count) continue;
+
+    html += `
+    <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:13px;font-weight:700;color:#fff">${esc(stage.stage_label)}</span>
+        <span style="font-size:11px;color:#64748b">${stage.count}</span>
+        <span style="font-size:11px;color:#10b981;margin-left:auto;font-weight:600">$${(stage.total_value || 0).toLocaleString()}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:1px solid #1e293b">
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Deal Name</th>
+            <th style="text-align:right;padding:6px 10px;color:#64748b;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;width:100px">Amount</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;width:80px">Owner</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    for (const d of (stage.deals || [])) {
+      const amountStr = !d.amount_set && d.amount === 0 ? '—' : '$' + (d.amount || 0).toLocaleString();
+      const amountColor = !d.amount_set && d.amount === 0 ? '#475569' : '#e2e8f0';
+      html += `
+          <tr style="border-bottom:1px solid #111827;cursor:pointer" onmouseover="this.style.background='#111827'" onmouseout="this.style.background=''" onclick="runDealCommand('${esc(d.name)}')">
+            <td style="padding:8px 10px;color:#e2e8f0">${esc(d.name)}</td>
+            <td style="padding:8px 10px;color:${amountColor};text-align:right;font-weight:600;font-variant-numeric:tabular-nums">${amountStr}</td>
+            <td style="padding:8px 10px;color:#94a3b8">${esc(d.owner_name || '—')}</td>
+          </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+  }
+
+  return html;
+}
+
+function renderInboxView(data) {
+  const filtered = data.total_filtered_out || 0;
+  let html = `
+    <div style="margin-bottom:20px">
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Important Inbox</h1>
+      <div style="font-size:12px;color:#64748b">
+        Live from Gmail &middot; ${data.total_unread || 0} important &middot; ${data.needs_reply || 0} need reply &middot; ${data.agent_drafted || 0} drafts
+        ${filtered > 0 ? ` &middot; <span style="color:#475569">${filtered} noise filtered out</span>` : ''}
+      </div>
+      <div style="font-size:10px;color:#334155;margin-top:4px">Showing: Primary + Important only &middot; Billing, newsletters, system alerts hidden</div>
+    </div>`;
+
+  if (!(data.threads || []).length) {
+    html += '<div class="empty-state">Inbox zero — no important unread threads</div>';
+    return html;
+  }
+
+  (data.threads || []).forEach(t => {
+    const pColor = t.priority === 'high' ? '#ef4444' : t.priority === 'medium' ? '#f59e0b' : '#334155';
+    const replyBadge = t.reply_needed ? '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(239,68,68,0.15);color:#ef4444">Reply needed</span>' : '';
+    const agentBadge = t.agent_status !== 'none' ? `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(16,185,129,0.15);color:#10b981">${t.agent_status.replace('_', ' ')}</span>` : '';
+
+    html += `
+    <div class="ctx-card" style="border-left:3px solid ${pColor};margin-bottom:6px;cursor:pointer" onclick="runEmailCommand('${esc(t.thread_id)}','${esc(t.from)}')">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <div class="ctx-card-title" style="flex:1;min-width:0">${esc(t.from)}</div>
+        ${replyBadge}
+        ${agentBadge}
+        ${t.priority_reason ? `<span style="font-size:9px;color:#64748b;white-space:nowrap">${esc(t.priority_reason)}</span>` : ''}
+      </div>
+      <div style="font-size:13px;color:#cbd5e1;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.subject)}</div>
+      <div style="font-size:11px;color:#475569;margin-top:3px">${esc((t.snippet || '').slice(0, 140))}${t.date ? ' &middot; ' + esc(t.date) : ''}</div>
+      ${t.why_it_matters ? `<div style="font-size:10px;color:#3b82f6;margin-top:4px">💡 ${esc(t.why_it_matters)}</div>` : ''}
+    </div>`;
+  });
+
+  return html;
+}
+
+function renderCalendarView(data) {
+  let html = `
+    <div style="margin-bottom:20px">
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Calendar</h1>
+      <div style="font-size:12px;color:#64748b">Live from Google Calendar &middot; ${data.external_count || 0} external &middot; ${data.needs_prep_count || 0} need prep</div>
+    </div>`;
+
+  // Next external meeting highlight
+  if (data.next_external) {
+    const ne = data.next_external;
+    html += `
+    <div class="ctx-card" style="border-color:rgba(168,85,247,0.3);margin-bottom:16px">
+      <div class="ctx-label">Next External Meeting</div>
+      <div class="ctx-card-title">${esc(ne.title)}</div>
+      <div class="ctx-card-sub">${esc(ne.time_until)} &middot; ${ne.attendees.length} attendee${ne.attendees.length !== 1 ? 's' : ''}</div>
+      ${ne.needs_prep ? `<div style="margin-top:4px;font-size:10px;color:#f59e0b;font-weight:600">${esc(ne.prep_reason || 'Prep needed')}</div>` : ''}
+    </div>`;
+  }
+
+  // Summary cards
+  html += `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px">
+      <div class="ctx-card"><div class="ctx-label">Today</div><div style="font-size:22px;font-weight:800;color:#fff">${(data.today || []).length}</div></div>
+      <div class="ctx-card"><div class="ctx-label">External</div><div style="font-size:22px;font-weight:800;color:#a855f7">${data.external_count || 0}</div></div>
+      <div class="ctx-card"><div class="ctx-label">Need Prep</div><div style="font-size:22px;font-weight:800;color:#f59e0b">${data.needs_prep_count || 0}</div></div>
+    </div>`;
+
+  // Today's meetings
+  if ((data.today || []).length) {
+    html += '<div class="section"><div class="section-header"><div class="section-title">Today</div><div class="section-count">' + data.today.length + '</div></div>';
+    data.today.forEach(m => {
+      html += renderMeetingCard(m);
+    });
+    html += '</div>';
+  }
+
+  // Upcoming meetings
+  if ((data.upcoming || []).length) {
+    html += '<div class="section"><div class="section-header"><div class="section-title">Upcoming</div><div class="section-count">' + data.upcoming.length + '</div></div>';
+    data.upcoming.forEach(m => {
+      html += renderMeetingCard(m);
+    });
+    html += '</div>';
+  }
+
+  if (!(data.today || []).length && !(data.upcoming || []).length) {
+    html += '<div class="empty-state">No meetings found in the next 5 days</div>';
+  }
+
+  return html;
+}
+
+function renderMeetingCard(m) {
+  const borderColor = m.needs_prep ? 'rgba(245,158,11,0.3)' : m.is_external ? 'rgba(168,85,247,0.2)' : '#1e293b';
+  const startTime = new Date(m.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const endTime = new Date(m.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const dayLabel = new Date(m.start).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  return `
+  <div class="ctx-card" style="border-color:${borderColor};margin-bottom:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="ctx-card-title">${esc(m.title)}</div>
+      <span style="font-size:11px;color:#64748b">${esc(m.time_until)}</span>
+    </div>
+    <div class="ctx-card-sub">${esc(dayLabel)} &middot; ${startTime} - ${endTime} &middot; ${m.attendees.length} attendee${m.attendees.length !== 1 ? 's' : ''}</div>
+    ${m.is_external ? '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(168,85,247,0.15);color:#a855f7;margin-top:4px;display:inline-block">External</span>' : ''}
+    ${m.needs_prep ? `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(245,158,11,0.15);color:#f59e0b;margin-top:4px;display:inline-block;margin-left:4px">${esc(m.prep_reason || 'Prep needed')}</span>` : ''}
+    ${m.attendees.length ? `<div style="margin-top:4px;font-size:10px;color:#475569">${m.attendees.map(a => esc(a.name || a.email)).join(', ')}</div>` : ''}
+    ${m.meet_link ? `<div style="margin-top:4px"><a href="${esc(m.meet_link)}" target="_blank" style="font-size:10px">Join Meeting</a></div>` : ''}
+  </div>`;
+}
+
+function renderEventsView(data) {
+  let html = `
+    <div style="margin-bottom:20px">
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">Event Log</h1>
+      <div style="font-size:12px;color:#64748b">${(data.events || []).length} events</div>
+    </div>`;
+
+  (data.events || []).forEach(e => {
+    const cls = e.event_type.includes('failed') ? 'error' : e.event_type.includes('completed') || e.event_type.includes('created') ? 'success' : 'agent';
+    html += `
+    <div class="timeline-event ${cls}" style="margin-bottom:4px">
+      <div class="tl-type">${esc(e.event_type)}</div>
+      <div class="tl-summary">${esc(summarizeEvent(e))}</div>
+      <div class="tl-time">${new Date(e.timestamp).toLocaleString()} ${e.correlation_id ? '&middot; ' + esc(e.correlation_id) : ''}</div>
+    </div>`;
+  });
+
+  if (!(data.events || []).length) html += '<div class="empty-state">No events recorded</div>';
+  return html;
+}
+
+// ── RIGHT PANEL: TIMELINE ──────────────────────────────────────────
+
+async function loadTimeline() {
+  try {
+    const data = await safeFetch('/api/v2/events?limit=30');
+    const el = document.getElementById('tabTimeline');
+
+    if (!data.events?.length) {
+      el.innerHTML = '<div class="empty-state">No activity yet</div>';
+      return;
+    }
+
+    el.innerHTML = data.events.map(e => {
+      const cls = e.event_type.includes('failed') ? 'error'
+        : e.event_type.includes('completed') || e.event_type.includes('created') ? 'success'
+        : e.source === 'user' ? 'user' : 'agent';
+      return `
+        <div class="timeline-event ${cls}">
+          <div class="tl-type">${esc(e.event_type)}</div>
+          <div class="tl-summary">${esc(summarizeEvent(e))}</div>
+          <div class="tl-time">${timeAgo(e.timestamp)}</div>
+        </div>`;
+    }).join('');
+  } catch (err) { /* non-critical */ }
+}
+
+// ── RIGHT PANEL: CONTEXT ───────────────────────────────────────────
+
+function updateContext(intent) {
+  contextData = intent;
+  const content = document.getElementById('contextContent');
+  const empty = document.getElementById('contextEmpty');
+
+  if (!intent) {
+    content.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  empty.style.display = 'none';
+  content.style.display = 'block';
+
+  let html = '';
+  html += `
+    <div class="ctx-card">
+      <div class="ctx-label">Current Intent</div>
+      <div class="ctx-card-title">${formatIntent(intent.intent)}</div>
+      <div class="ctx-card-sub">Confidence: ${Math.round((intent.confidence || 0) * 100)}% &middot; Mode: ${intent.mode || 'execute'}</div>
+    </div>`;
+
+  if (intent.entities?.length) {
+    html += '<div style="margin-top:10px"><div class="ctx-label">Entities</div>';
+    intent.entities.forEach(e => {
+      html += `
+      <div class="ctx-card">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="ctx-card-title">${esc(e.resolved_name || e.raw_text)}</div>
+          <span style="font-size:10px;color:#475569;margin-left:auto">${esc(e.entity_type)}</span>
+        </div>
+        ${e.resolved_id ? `<div class="ctx-card-sub">ID: ${esc(e.resolved_id)}</div>` : ''}
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '<div style="margin-top:12px"><div class="ctx-label">Quick Actions</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">';
+  const company = intent.entities?.find(e => e.entity_type === 'company')?.resolved_name;
+  if (company) {
+    html += `<span class="quick-chip" onclick="insertChip('Draft a follow-up email to ${company}')">Draft email</span>`;
+    html += `<span class="quick-chip" onclick="insertChip('Create a proposal for ${company}')">Create proposal</span>`;
+    html += `<span class="quick-chip" onclick="insertChip('Schedule a meeting with ${company}')">Schedule</span>`;
+  }
+  html += '</div></div>';
+
+  content.innerHTML = html;
+}
+
+// ── RIGHT PANEL: APPROVALS ─────────────────────────────────────────
+
+function addApprovalsToPending(plan) {
+  const steps = plan.steps.filter(s => s.approval_required);
+  pendingApprovals = steps.map(s => ({
+    step_id: s.step_id,
+    tool: s.tool,
+    description: s.description,
+    plan_id: plan.plan_id,
+  }));
+  updateApprovalBadge();
+  renderApprovalsList();
+  if (pendingApprovals.length > 0) switchTab('approvals');
+}
+
+function updateApprovalBadge() {
+  const badge = document.getElementById('approvalBadge');
+  if (pendingApprovals.length > 0) {
+    badge.style.display = 'inline';
+    badge.textContent = pendingApprovals.length;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderApprovalsList() {
+  const list = document.getElementById('approvalsList');
+  const empty = document.getElementById('approvalsEmpty');
+
+  if (!pendingApprovals.length) {
+    empty.style.display = 'block';
+    list.innerHTML = '';
+    return;
+  }
+
+  empty.style.display = 'none';
+  list.innerHTML = pendingApprovals.map(a => `
+    <div class="approval-item">
+      <div class="approval-item-header">
+        <span class="approval-item-tool">${esc(a.tool)}</span>
+        <span class="approval-item-time">pending</span>
+      </div>
+      <div class="approval-item-desc">${esc(a.description)}</div>
+      <div class="approval-item-btns">
+        <button class="approval-btn approval-approve" style="font-size:10px;padding:4px 10px" onclick="approveAndExecute()">Approve All</button>
+        <button class="approval-btn approval-deny" style="font-size:10px;padding:4px 10px" onclick="denyExecution()">Deny</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── HELPERS ─────────────────────────────────────────────────────────
+
+function setApprovalOption(type, value) {
+  if (!lastExecution) return;
+  if (!lastExecution.overrides) lastExecution.overrides = {};
+  lastExecution.overrides[type] = value;
+  showToast(`Set ${type}: ${value}`);
+}
+
+function formatIntent(intent) {
+  if (!intent) return 'Unknown';
+  const map = {
+    'postcall.full': 'Post-Call Full Workflow',
+    'postcall.analyze': 'Call Analysis',
+    'inbox.triage': 'Inbox Triage',
+    'email.draft': 'Draft Email',
+    'email.draft_batch': 'Batch Email Drafts',
+    'pipeline.top_actions': 'Top Pipeline Actions',
+    'pipeline.slip_risk': 'Slip Risk Analysis',
+    'pipeline.stale': 'Stale Deal Review',
+    'pipeline.summary': 'Pipeline Summary',
+    'proposal.create': 'Create Proposal',
+    'proposal.pricing': 'Pricing Calculation',
+    'meeting.prep': 'Meeting Prep',
+    'meeting.schedule': 'Schedule Meeting',
+    'scheduling.request': 'Scheduling (Jackson)',
+    'email_context.recommendation': 'Email Context — Recommendation',
+    'read.email': 'Email Lookup',
+    'read.deal': 'Deal Lookup',
+    'read.pipeline': 'Pipeline View',
+    'read.calendar': 'Calendar View',
+    'read.contact': 'Contact Lookup',
+    'opportunity.create': 'Create Opportunity',
+    'pipeline.stage_update_with_notes': 'Update Stage + Granola Notes',
+    'oversight.daily_brief': 'Daily Brief',
+    'oversight.intervention': 'Team Intervention',
+    'oversight.rep_review': 'Rep Review',
+  };
+  return map[intent] || intent.replace(/\./g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function summarizeOutput(output) {
+  if (!output) return '';
+  const parts = [];
+  if (output.deals) parts.push(`${Array.isArray(output.deals) ? output.deals.length : 1} deal(s)`);
+  if (output.threads) parts.push(`${Array.isArray(output.threads) ? output.threads.length : 1} thread(s)`);
+  if (output.notes) parts.push(`${Array.isArray(output.notes) ? output.notes.length : 1} note(s)`);
+  if (output.draft_id) parts.push(`Draft: ${output.draft_id}`);
+  if (output.proposal_id) parts.push(`Proposal: ${output.proposal_id}`);
+  if (output.events) parts.push(`${Array.isArray(output.events) ? output.events.length : 0} events`);
+  if (output.analysis) parts.push('Analysis generated');
+  if (output.crm_note) parts.push('CRM summary generated');
+  if (output.next_steps_text) parts.push(`Next steps: ${output.next_steps_text.slice(0, 80)}`);
+  if (output.updated_properties?.hs_next_step) parts.push('Next Steps updated');
+  if (output.updated_properties?.dealstage) parts.push('Stage updated');
+  if (output.note_id) parts.push(`Note: ${output.note_id}`);
+  if (parts.length) return parts.join(' | ');
+  return Object.keys(output).slice(0, 3).join(', ');
+}
+
+function formatArtifact(a) {
+  if (!a.data) return 'No data';
+  if (a.data.content) return a.data.content;
+  if (typeof a.data === 'string') return a.data;
+  return JSON.stringify(a.data, null, 2);
+}
+
+function summarizeEvent(evt) {
+  const p = evt.payload || {};
+  switch (evt.event_type) {
+    case 'agent.command.received': return `"${(p.raw_text || '').slice(0, 60)}"`;
+    case 'agent.plan.started': return `Plan: ${p.step_count} steps (${(p.tools || []).join(', ')})`;
+    case 'agent.plan.completed': return `${p.steps_completed}/${(p.steps_completed || 0) + (p.steps_failed || 0)} steps, ${p.duration_ms}ms`;
+    case 'agent.action.started': return p.description || p.tool;
+    case 'agent.action.completed': return `${p.tool} (${p.duration_ms}ms)`;
+    case 'agent.action.failed': return `${p.tool}: ${p.error || 'failed'}`;
+    case 'hubspot.deal.stage_changed': return `${p.old_value} -> ${p.new_value}`;
+    case 'hubspot.deal.note_added': return 'CRM note added';
+    case 'gmail.draft.created': return `Draft: ${p.subject || ''}`;
+    case 'proposal.created': return `Proposal ${p.proposal_id || ''}`;
+    case 'granola.note.analyzed': return 'Call analyzed';
+    case 'granola.note.summarized_for_crm': return `CRM summary generated (${p.next_steps_count || 0} action items)`;
+    case 'jackson.scheduling.requested': return `Schedule: ${p.company || ''}`;
+    case 'jackson.meeting.booked': return `Booked: ${p.company || ''}`;
+    default: return evt.event_type.split('.').slice(-2).join('.');
+  }
+}
+
+function runDealCommand(company) {
+  insertChip(`Show me everything on ${company}`);
+}
+
+function runEmailCommand(threadId, from) {
+  insertChip(`Draft a reply to ${from}`);
+}
+
+function copyArtifact(btn) {
+  const text = btn.dataset.content;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied'));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function timeAgo(ts) {
+  const d = Date.now() - new Date(ts).getTime();
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d / 3600000) + 'h ago';
+  return new Date(ts).toLocaleDateString();
+}
+
+function scrollToBottom() {
+  const scroll = document.querySelector('.center-scroll');
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── WIZARD RENDERING ──────────────────────────────────────────────
+
+const WIZARD_STAGE_OPTIONS = [
+  { value: '93124525', label: 'Disco Booked' },
+  { value: '998751160', label: 'Disco Complete' },
+  { value: 'appointmentscheduled', label: 'Demo Scheduled' },
+  { value: '123162712', label: 'Demo Completed' },
+  { value: 'presentationscheduled', label: 'Presentation Scheduled' },
+  { value: 'qualifiedtobuy', label: 'Qualified to Buy' },
+  { value: 'decisionmakerboughtin', label: 'Negotiating' },
+  { value: '227588384', label: 'Committed' },
+  { value: 'contractsent', label: 'Contract Sent' },
+  { value: 'closedwon', label: 'Closed Won' },
+  { value: 'closedlost', label: 'Closed Lost' },
+  { value: '60237411', label: 'Nurture' },
+];
+
+function renderWizard() {
+  if (!wizardState) return '';
+  const w = wizardState;
+  const stepLabels = ['Contact', 'Company', 'Deal'];
+
+  let html = '';
+
+  // Original command
+  html += `
+    <div class="original-command">
+      <div class="original-command-label">Original command</div>
+      <div class="original-command-text">"${esc(w.raw_text)}"</div>
+    </div>`;
+
+  // Wizard header with parsed info
+  html += `
+    <div class="wizard-header">
+      <div class="wizard-title">Create Opportunity — Guided Wizard</div>
+      <div class="wizard-subtitle">CRM creation commands use a step-by-step wizard. Nothing is created until you confirm each form.</div>
+      <div class="wizard-parsed">
+        <span class="wizard-parsed-chip action">Action: Create Opportunity</span>
+        ${w.target_stage_label ? `<span class="wizard-parsed-chip stage">Stage: ${esc(w.target_stage_label)}</span>` : ''}
+        ${w.company_name ? `<span class="wizard-parsed-chip company">Company: ${esc(w.company_name)}</span>` : ''}
+      </div>
+    </div>`;
+
+  // Step indicators
+  html += '<div class="wizard-steps">';
+  for (let i = 0; i < stepLabels.length; i++) {
+    const cls = i < w.current_step ? 'completed' : i === w.current_step ? 'active' : '';
+    const skipped = (i === 0 && w.contact_skipped) || false;
+    html += `<div class="wizard-step-indicator ${skipped ? 'skipped' : cls}">
+      <div class="ws-num">${skipped ? '—' : i < w.current_step ? '&#10003;' : i + 1}</div>
+      <span class="ws-label">${stepLabels[i]}</span>
+    </div>`;
+    if (i < stepLabels.length - 1) {
+      html += `<div class="wizard-step-connector ${i < w.current_step ? 'done' : ''}"><div class="ws-line"></div></div>`;
+    }
+  }
+  html += '</div>';
+
+  // Current step form
+  if (w.current_step === 0) {
+    html += renderWizardContactStep();
+  } else if (w.current_step === 1) {
+    html += renderWizardCompanyStep();
+  } else if (w.current_step === 2) {
+    html += renderWizardDealStep();
+  } else if (w.current_step === 3) {
+    html += renderWizardComplete();
+  }
+
+  return '<div class="wizard-container">' + html + '</div>';
+}
+
+function renderWizardContactStep() {
+  const w = wizardState;
+  const existing = w.existing_contacts || [];
+  let html = '';
+
+  // Show existing contacts if found
+  if (existing.length > 0) {
+    html += `
+    <div class="wizard-existing">
+      <div class="wizard-existing-title">Existing contacts found for "${esc(w.company_name)}"</div>`;
+    for (const c of existing) {
+      const selected = w.selected_contact?.id === c.id;
+      html += `
+      <div class="wizard-existing-item ${selected ? 'selected' : ''}" onclick="wizardSelectContact('${esc(c.id)}','${esc(c.name)}','${esc(c.email || '')}','${esc(c.title || '')}','${esc(c.phone || '')}')">
+        <span class="wei-name">${esc(c.name || 'No name')}</span>
+        ${c.email ? `<span style="color:#64748b;font-size:11px">${esc(c.email)}</span>` : ''}
+        ${c.title ? `<span class="wei-detail">${esc(c.title)}</span>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Contact form
+  html += `
+    <div class="wizard-form">
+      <div class="wizard-form-title">
+        <span>Step 1: Contact</span>
+        <span class="wf-badge">Optional</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="wizard-field">
+          <label>Full Name</label>
+          <input type="text" id="wiz-contact-name" placeholder="Jane Smith" value="${esc(w.contact_data.name || '')}" onchange="wizardState.contact_data.name=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Email</label>
+          <input type="email" id="wiz-contact-email" placeholder="jane@company.com" value="${esc(w.contact_data.email || '')}" onchange="wizardState.contact_data.email=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Title</label>
+          <input type="text" id="wiz-contact-title" placeholder="VP of Marketing" value="${esc(w.contact_data.title || '')}" onchange="wizardState.contact_data.title=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Phone</label>
+          <input type="tel" id="wiz-contact-phone" placeholder="+1 555-0123" value="${esc(w.contact_data.phone || '')}" onchange="wizardState.contact_data.phone=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>LinkedIn</label>
+          <input type="url" id="wiz-contact-linkedin" placeholder="https://linkedin.com/in/..." value="${esc(w.contact_data.linkedin || '')}" onchange="wizardState.contact_data.linkedin=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Notes</label>
+          <input type="text" id="wiz-contact-notes" placeholder="Additional notes..." value="${esc(w.contact_data.notes || '')}" onchange="wizardState.contact_data.notes=this.value">
+        </div>
+      </div>
+      <div class="wizard-actions">
+        <button class="wizard-btn wizard-btn-primary" onclick="wizardCreateContact()">Create Contact</button>
+        <button class="wizard-btn wizard-btn-skip" onclick="wizardSkipContact()">Skip Contact</button>
+        ${existing.length > 0 ? '<button class="wizard-btn wizard-btn-secondary" onclick="wizardUseExistingContact()">Use Selected Contact</button>' : ''}
+      </div>
+    </div>`;
+
+  return html;
+}
+
+function renderWizardCompanyStep() {
+  const w = wizardState;
+  const existing = w.existing_companies || [];
+  let html = '';
+
+  // Show existing companies if found
+  if (existing.length > 0) {
+    html += `
+    <div class="wizard-existing">
+      <div class="wizard-existing-title">Existing companies found</div>`;
+    for (const c of existing) {
+      const selected = w.selected_company?.id === c.id;
+      html += `
+      <div class="wizard-existing-item ${selected ? 'selected' : ''}" onclick="wizardSelectCompany('${esc(c.id)}','${esc(c.name)}','${esc(c.domain || '')}','${esc(c.industry || '')}')">
+        <span class="wei-name">${esc(c.name)}</span>
+        ${c.domain ? `<span style="color:#64748b;font-size:11px">${esc(c.domain)}</span>` : ''}
+        ${c.industry ? `<span class="wei-detail">${esc(c.industry)}</span>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  html += `
+    <div class="wizard-form">
+      <div class="wizard-form-title">
+        <span>Step 2: Company</span>
+        <span class="wf-badge">Required</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="wizard-field">
+          <label>Company Name</label>
+          <input type="text" id="wiz-company-name" placeholder="Carda Health" value="${esc(w.company_data.name || w.company_name || '')}" class="${w.company_name ? 'prefilled' : ''}" onchange="wizardState.company_data.name=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Website</label>
+          <input type="url" id="wiz-company-website" placeholder="https://carda.health" value="${esc(w.company_data.website || '')}" onchange="wizardState.company_data.website=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Domain</label>
+          <input type="text" id="wiz-company-domain" placeholder="carda.health" value="${esc(w.company_data.domain || '')}" onchange="wizardState.company_data.domain=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Industry</label>
+          <input type="text" id="wiz-company-industry" placeholder="Healthcare" value="${esc(w.company_data.industry || '')}" onchange="wizardState.company_data.industry=this.value">
+        </div>
+        <div class="wizard-field" style="grid-column:span 2">
+          <label>Notes</label>
+          <input type="text" id="wiz-company-notes" placeholder="Additional company notes..." value="${esc(w.company_data.notes || '')}" onchange="wizardState.company_data.notes=this.value">
+        </div>
+      </div>
+      <div class="wizard-actions">
+        <button class="wizard-btn wizard-btn-primary" onclick="wizardCreateCompany()">Create Company</button>
+        ${existing.length > 0 ? '<button class="wizard-btn wizard-btn-secondary" onclick="wizardUseExistingCompany()">Use Existing Company</button>' : ''}
+        <button class="wizard-btn wizard-btn-back" onclick="wizardBack()">Back</button>
+      </div>
+    </div>`;
+
+  return html;
+}
+
+function renderWizardDealStep() {
+  const w = wizardState;
+  const stageOptions = WIZARD_STAGE_OPTIONS.map(s =>
+    `<option value="${esc(s.value)}" ${w.deal_data.dealstage === s.value ? 'selected' : ''}>${esc(s.label)}</option>`
+  ).join('');
+
+  let html = `
+    <div class="wizard-form">
+      <div class="wizard-form-title">
+        <span>Step 3: Deal</span>
+        <span class="wf-badge">Required</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="wizard-field">
+          <label>Deal Name</label>
+          <input type="text" id="wiz-deal-name" placeholder="Carda Health" value="${esc(w.deal_data.dealname || w.company_name || '')}" class="${w.company_name ? 'prefilled' : ''}" onchange="wizardState.deal_data.dealname=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Deal Stage</label>
+          <select id="wiz-deal-stage" onchange="wizardState.deal_data.dealstage=this.value">
+            <option value="">Select stage...</option>
+            ${stageOptions}
+          </select>
+        </div>
+        <div class="wizard-field">
+          <label>Deal Owner</label>
+          <input type="text" id="wiz-deal-owner" placeholder="Owner name or ID" value="${esc(w.deal_data.owner || '')}" onchange="wizardState.deal_data.owner=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Amount ($)</label>
+          <input type="text" id="wiz-deal-amount" placeholder="50000" value="${esc(w.deal_data.amount || '')}" onchange="wizardState.deal_data.amount=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Close Date</label>
+          <input type="date" id="wiz-deal-closedate" value="${esc(w.deal_data.closedate || '')}" onchange="wizardState.deal_data.closedate=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Pipeline</label>
+          <input type="text" id="wiz-deal-pipeline" placeholder="default" value="${esc(w.deal_data.pipeline || 'default')}" onchange="wizardState.deal_data.pipeline=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Next Step</label>
+          <input type="text" id="wiz-deal-nextstep" placeholder="Schedule follow-up" value="${esc(w.deal_data.next_step || '')}" onchange="wizardState.deal_data.next_step=this.value">
+        </div>
+        <div class="wizard-field">
+          <label>Notes</label>
+          <input type="text" id="wiz-deal-notes" placeholder="Deal notes..." value="${esc(w.deal_data.notes || '')}" onchange="wizardState.deal_data.notes=this.value">
+        </div>
+      </div>
+
+      <div style="margin-top:10px;padding:8px 12px;background:#0a0e1a;border-radius:6px;font-size:11px;color:#64748b">
+        ${w.selected_company ? `<span style="color:#a855f7">Company:</span> ${esc(w.selected_company.name)} (${esc(w.selected_company.id)})` : w.created_company ? `<span style="color:#10b981">Company:</span> ${esc(w.created_company.name)} (new)` : '<span style="color:#f59e0b">No company linked</span>'}
+        &nbsp;&middot;&nbsp;
+        ${w.selected_contact ? `<span style="color:#60a5fa">Contact:</span> ${esc(w.selected_contact.name)} (${esc(w.selected_contact.id)})` : w.created_contact ? `<span style="color:#10b981">Contact:</span> ${esc(w.created_contact.name)} (new)` : w.contact_skipped ? '<span style="color:#475569">Contact: skipped</span>' : '<span style="color:#f59e0b">No contact linked</span>'}
+      </div>
+
+      <div class="wizard-actions">
+        <button class="wizard-btn wizard-btn-primary" onclick="wizardCreateDeal()">Create Deal</button>
+        <button class="wizard-btn wizard-btn-danger" onclick="wizardCancel()">Cancel</button>
+        <button class="wizard-btn wizard-btn-back" onclick="wizardBack()">Back</button>
+      </div>
+    </div>`;
+
+  return html;
+}
+
+function renderWizardComplete() {
+  const w = wizardState;
+  const trace = w.trace || [];
+
+  let html = `
+    <div class="wizard-trace">
+      <div class="wizard-trace-title">Opportunity Created Successfully</div>`;
+
+  for (const step of trace) {
+    html += `
+      <div class="wizard-trace-step">
+        <div class="wts-dot ${step.status}"></div>
+        <span class="wts-label">${esc(step.label)}</span>
+        <span class="wts-result">${esc(step.result || '')}</span>
+      </div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// ── WIZARD ACTIONS ──────────────────────────────────────────────
+
+function wizardSelectContact(id, name, email, title, phone) {
+  wizardState.selected_contact = { id, name, email, title, phone };
+  // Highlight selected in UI
+  document.querySelectorAll('.wizard-existing-item').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+}
+
+function wizardSelectCompany(id, name, domain, industry) {
+  wizardState.selected_company = { id, name, domain, industry };
+  document.querySelectorAll('.wizard-existing-item').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+}
+
+async function wizardCreateContact() {
+  const w = wizardState;
+  // Read current form values
+  const nameVal = document.getElementById('wiz-contact-name')?.value || '';
+  const parts = nameVal.split(/\s+/);
+  const firstname = parts[0] || '';
+  const lastname = parts.slice(1).join(' ') || '';
+
+  const data = {
+    firstname,
+    lastname,
+    email: document.getElementById('wiz-contact-email')?.value || '',
+    jobtitle: document.getElementById('wiz-contact-title')?.value || '',
+    phone: document.getElementById('wiz-contact-phone')?.value || '',
+    linkedin_url: document.getElementById('wiz-contact-linkedin')?.value || '',
+  };
+
+  try {
+    const result = await safeFetch('/api/v2/wizard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_contact', data, command_id: w.command_id }),
+    });
+
+    if (result.success) {
+      w.created_contact = { id: result.contact_id, name: result.name };
+      w.trace.push({ label: 'Create contact', status: 'done', result: `${result.name} (${result.contact_id})` });
+      w.current_step = 1;
+      showToast('Contact created');
+    } else {
+      showToast('Error: ' + (result.error || 'Failed'));
+      return;
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message);
+    return;
+  }
+
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+function wizardSkipContact() {
+  wizardState.contact_skipped = true;
+  wizardState.trace.push({ label: 'Skip contact', status: 'skipped', result: 'Skipped by user' });
+  wizardState.current_step = 1;
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+function wizardUseExistingContact() {
+  const w = wizardState;
+  if (!w.selected_contact) {
+    showToast('Select a contact first');
+    return;
+  }
+  w.trace.push({ label: 'Use existing contact', status: 'done', result: `${w.selected_contact.name} (${w.selected_contact.id})` });
+  w.current_step = 1;
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+async function wizardCreateCompany() {
+  const w = wizardState;
+  const data = {
+    name: document.getElementById('wiz-company-name')?.value || '',
+    website: document.getElementById('wiz-company-website')?.value || '',
+    domain: document.getElementById('wiz-company-domain')?.value || '',
+    industry: document.getElementById('wiz-company-industry')?.value || '',
+    notes: document.getElementById('wiz-company-notes')?.value || '',
+  };
+
+  if (!data.name) {
+    showToast('Company name is required');
+    return;
+  }
+
+  try {
+    const result = await safeFetch('/api/v2/wizard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_company', data, command_id: w.command_id }),
+    });
+
+    if (result.success) {
+      w.created_company = { id: result.company_id, name: result.name };
+      w.trace.push({ label: 'Create company', status: 'done', result: `${result.name} (${result.company_id})` });
+      w.current_step = 2;
+      showToast('Company created');
+    } else {
+      showToast('Error: ' + (result.error || 'Failed'));
+      return;
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message);
+    return;
+  }
+
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+function wizardUseExistingCompany() {
+  const w = wizardState;
+  if (!w.selected_company) {
+    showToast('Select a company first');
+    return;
+  }
+  w.trace.push({ label: 'Use existing company', status: 'done', result: `${w.selected_company.name} (${w.selected_company.id})` });
+  w.current_step = 2;
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+async function wizardCreateDeal() {
+  const w = wizardState;
+  const companyId = w.selected_company?.id || w.created_company?.id || null;
+  const contactId = w.selected_contact?.id || w.created_contact?.id || null;
+
+  const data = {
+    dealname: document.getElementById('wiz-deal-name')?.value || '',
+    dealstage: document.getElementById('wiz-deal-stage')?.value || '',
+    amount: document.getElementById('wiz-deal-amount')?.value || '',
+    closedate: document.getElementById('wiz-deal-closedate')?.value || '',
+    hubspot_owner_id: document.getElementById('wiz-deal-owner')?.value || '',
+    pipeline: document.getElementById('wiz-deal-pipeline')?.value || '',
+    next_step: document.getElementById('wiz-deal-nextstep')?.value || '',
+    notes: document.getElementById('wiz-deal-notes')?.value || '',
+    company_id: companyId,
+    contact_id: contactId,
+  };
+
+  if (!data.dealname) {
+    showToast('Deal name is required');
+    return;
+  }
+
+  // Add search traces
+  if (companyId && w.selected_company) {
+    w.trace.push({ label: 'Search existing company', status: 'done', result: `Found: ${w.selected_company.name}` });
+  }
+  if (contactId && w.selected_contact) {
+    w.trace.push({ label: 'Search existing contact', status: 'done', result: `Found: ${w.selected_contact.name}` });
+  }
+
+  try {
+    const result = await safeFetch('/api/v2/wizard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_deal', data, command_id: w.command_id }),
+    });
+
+    if (result.success) {
+      w.created_deal = { id: result.deal_id, dealname: result.dealname };
+      w.trace.push({ label: 'Create deal', status: 'done', result: `${data.dealname} (${result.deal_id})` });
+
+      // Add association traces
+      if (companyId) {
+        w.trace.push({ label: 'Associate deal with company', status: 'done', result: `${w.selected_company?.name || w.created_company?.name}` });
+      }
+      if (contactId) {
+        w.trace.push({ label: 'Associate deal with contact', status: 'done', result: `${w.selected_contact?.name || w.created_contact?.name}` });
+      }
+
+      w.current_step = 3;
+      showToast('Deal created successfully');
+      loadTimeline();
+    } else {
+      showToast('Error: ' + (result.error || 'Failed'));
+      return;
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message);
+    return;
+  }
+
+  document.getElementById('execArea').innerHTML = renderWizard();
+  scrollToBottom();
+}
+
+function wizardBack() {
+  if (wizardState.current_step > 0) {
+    wizardState.current_step--;
+    document.getElementById('execArea').innerHTML = renderWizard();
+    scrollToBottom();
+  }
+}
+
+function wizardCancel() {
+  wizardState = null;
+  lastExecution = null;
+  document.getElementById('execArea').innerHTML = `
+    <div class="intent-banner" style="border-color:rgba(239,68,68,0.2)">
+      <div class="intent-row">
+        <div class="intent-badge low">Cancelled</div>
+        <div class="intent-label">Wizard cancelled</div>
+      </div>
+      <div class="intent-sub">The opportunity was not created. Try a different command.</div>
+    </div>`;
+  showToast('Wizard cancelled');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+
+loadTimeline();
+loadIntegrationHealth();
+timelinePolling = setInterval(loadTimeline, 15000);
+</script>
+</body>
+</html>

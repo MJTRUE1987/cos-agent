@@ -20,7 +20,14 @@
     { "source": "/api/snapshot", "destination": "/api/snapshot.js" },
     { "source": "/api/end-of-day", "destination": "/api/end-of-day.js" },
     { "source": "/api/end-of-week", "destination": "/api/end-of-week.js" },
-    { "source": "/api/google-auth", "destination": "/api/google-auth.js" }
+    { "source": "/api/google-auth", "destination": "/api/google-auth.js" },
+    { "source": "/v2", "destination": "/v2.html" },
+    { "source": "/api/v2/command", "destination": "/api/v2/command.ts" },
+    { "source": "/api/v2/events", "destination": "/api/v2/events.ts" },
+    { "source": "/api/v2/projections", "destination": "/api/v2/projections.ts" },
+    { "source": "/api/v2/execution", "destination": "/api/v2/execution.ts" },
+    { "source": "/api/v2/scheduling", "destination": "/api/v2/scheduling.ts" },
+    { "source": "/api/v2/wizard", "destination": "/api/v2/wizard.ts" }
   ],
   "headers": [
     {
