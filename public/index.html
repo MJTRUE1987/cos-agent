@@ -2285,6 +2285,47 @@ function archiveItem(id) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode: 'upsert', actions: ACTIONS }),
   }).catch(err => console.error('[archiveItem] Persist failed:', err));
+  // Archive in Gmail too (remove from inbox)
+  if (a.threadId) {
+    apiFetch('/api/archive-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: a.threadId }),
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        addChat("agent", `<span style="color:#64748b;">📬 Gmail thread archived.</span>`);
+      }
+    }).catch(err => console.error('[archiveItem] Gmail archive failed:', err));
+  }
+  setTimeout(() => advanceToNext(), 300);
+}
+
+function deleteItem(id) {
+  const a = ACTIONS.find(x => x.id === id);
+  if (!a) return;
+  a.status = "archived";
+  _briefingCache = null; _endOfDayCache = null; _endOfWeekCache = null; _intelligenceCache = null;
+  runSignalEngine();
+  updateProgressBadge();
+  addChat("agent", `<span style="color:#ef4444;">🗑️ ${a.company} — deleted.</span> ${getOpen().length} remaining.`);
+  // Persist to server
+  apiFetch('/api/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'upsert', actions: ACTIONS }),
+  }).catch(err => console.error('[deleteItem] Persist failed:', err));
+  // Trash in Gmail
+  if (a.threadId) {
+    apiFetch('/api/delete-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: a.threadId }),
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        addChat("agent", `<span style="color:#ef4444;">🗑️ Gmail thread moved to trash.</span>`);
+      }
+    }).catch(err => console.error('[deleteItem] Gmail delete failed:', err));
+  }
   setTimeout(() => advanceToNext(), 300);
 }
 
@@ -4416,7 +4457,8 @@ const INTENT_PATTERNS = [
   { intent: 'confirmed', pattern: /\b(on my calendar|scheduled|confirmed|already booked|meeting.?s? (set|booked|confirmed)|it.?s on|booked it)\b/ },
   { intent: 'already_done', pattern: /\b(already (replied|responded|emailed|sent)|i (replied|responded|sent)|wrote them|emailed them|sent (it|that|the email))\b/ },
   { intent: 'not_interested', pattern: /\b(not interested|pass on|not a fit|not for us|too early|not now|waste of time|spam|junk)\b/ },
-  { intent: 'archive', pattern: /\b(archive|dismiss|remove|kill it|nah|drop it|forget it|trash)\b/ },
+  { intent: 'delete', pattern: /\b(delete|trash|destroy|get rid of|throw away|permanently remove)\b/ },
+  { intent: 'archive', pattern: /\b(archive|dismiss|remove|kill it|nah|drop it|forget it)\b/ },
   { intent: 'skip', pattern: /\b(skip|next|move on|pass|later|come back|tomorrow|no action)\b/ },
   { intent: 'done', pattern: /\b(done|finished|complete|handled|checked off)\b/ },
   // Start day
@@ -4711,6 +4753,12 @@ function handleLocalCommand(text) {
       ensureSelected(entity);
       addChat("agent", `✕ ${entity.company} — not a fit.`);
       if (entity.id !== -1) archiveItem(entity.id);
+      return true;
+
+    case 'delete':
+      if (!entity) { showRecoveryResponse(intent); return true; }
+      ensureSelected(entity);
+      if (entity.id !== -1) deleteItem(entity.id);
       return true;
 
     case 'archive':
@@ -5314,8 +5362,8 @@ function getNextStepForDeal(deal) {
 }
 
 function renderPipelineView(main) {
-  const stageOrder = ["Committed","Negotiating","Demo Completed","Demo Scheduled","Disco Complete","Disco Booked","Nurture","Booking"];
-  const closedStages = ["Closed Won", "Closed Lost"];
+  const stageOrder = ["Committed","Negotiating","Demo Completed","Demo Scheduled","Disco Complete","Disco Booked","Booking"];
+  const closedStages = ["Closed Won", "Closed Lost", "Nurture"];
   const openStages = stageOrder;
 
   // Derive unique owners from data

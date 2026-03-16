@@ -310,6 +310,52 @@
   /* ── THREADED COMMAND HISTORY ── */
   .thread-entry { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #1e293b; }
   .thread-entry:last-child { border-bottom: none; }
+
+  /* ── THREAD DETAIL VIEW (Superhuman-style) ── */
+  .thread-detail { max-width: 800px; }
+  .thread-back { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; cursor: pointer; padding: 4px 8px; border-radius: 5px; margin-bottom: 12px; }
+  .thread-back:hover { color: #94a3b8; background: #111827; }
+  .thread-subject { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; line-height: 1.3; }
+  .thread-meta { font-size: 12px; color: #64748b; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .thread-label { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+  .thread-actions-bar { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+  .thread-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; border: 1px solid #1e293b; background: #111827; color: #94a3b8; transition: all 0.15s; }
+  .thread-action-btn:hover { border-color: #334155; color: #e2e8f0; background: #1e293b; }
+  .thread-action-btn.primary { background: #1e40af; border-color: #1e40af; color: #93c5fd; }
+  .thread-action-btn.primary:hover { background: #1d4ed8; }
+  .thread-action-btn.danger:hover { border-color: rgba(239,68,68,0.4); color: #ef4444; background: rgba(239,68,68,0.08); }
+  .thread-action-btn.green:hover { border-color: rgba(16,185,129,0.4); color: #10b981; background: rgba(16,185,129,0.08); }
+  .thread-action-btn kbd { font-size: 9px; background: #0a0e1a; padding: 1px 5px; border-radius: 3px; color: #475569; font-family: 'SF Mono', monospace; border: 1px solid #1e293b; }
+
+  .thread-crm-bar { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .crm-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .crm-info { flex: 1; min-width: 0; }
+  .crm-name { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+  .crm-detail { font-size: 11px; color: #64748b; }
+  .crm-deal-chip { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 4px; background: rgba(59,130,246,0.12); color: #60a5fa; }
+
+  .thread-message { background: #111827; border: 1px solid #1e293b; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .thread-message.expanded .msg-body { display: block; }
+  .thread-message.collapsed .msg-body { display: none; }
+  .msg-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; }
+  .msg-header:hover { background: rgba(30,41,59,0.5); }
+  .msg-avatar { width: 28px; height: 28px; border-radius: 50%; background: #1e293b; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .msg-sender { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+  .msg-to { font-size: 11px; color: #64748b; }
+  .msg-date { font-size: 11px; color: #475569; margin-left: auto; white-space: nowrap; }
+  .msg-snippet { font-size: 12px; color: #475569; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; }
+  .msg-body { padding: 0 16px 16px 54px; font-size: 13px; color: #cbd5e1; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto; }
+  .msg-body a { color: #60a5fa; }
+
+  .thread-reply-box { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; margin-top: 12px; }
+  .reply-label { font-size: 11px; font-weight: 700; color: #10b981; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .reply-body { font-size: 13px; color: #cbd5e1; line-height: 1.6; white-space: pre-wrap; margin-bottom: 12px; padding: 12px; background: #0a0e1a; border-radius: 6px; border: 1px solid #1e293b; }
+  .reply-actions { display: flex; gap: 8px; }
+  .reply-edit-area { width: 100%; min-height: 100px; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 6px; padding: 12px; color: #cbd5e1; font-size: 13px; font-family: inherit; line-height: 1.6; resize: vertical; outline: none; margin-bottom: 12px; }
+  .reply-edit-area:focus { border-color: #3b82f6; }
+
+  .thread-loading { padding: 60px 0; text-align: center; }
+  .thread-loading-text { font-size: 13px; color: #64748b; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -327,7 +373,7 @@
       <div class="dot" style="background:#3b82f6"></div> Pipeline
     </div>
     <div class="nav-item" data-view="inbox" onclick="switchView('inbox')">
-      <div class="dot" style="background:#f59e0b"></div> Important
+      <div class="dot" style="background:#f59e0b"></div> Inbox
       <span class="count" id="inboxCount">-</span>
     </div>
     <div class="nav-item" data-view="calendar" onclick="switchView('calendar')">
@@ -529,6 +575,9 @@ async function loadIntegrationHealth() {
 // ── NAV ────────────────────────────────────────────────────────────
 function switchView(view) {
   currentView = view;
+  // Clean up thread detail state when leaving
+  if (typeof unbindThreadKeyboard === 'function') unbindThreadKeyboard();
+
   document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === view));
 
   const welcomeScreen = document.getElementById('welcomeScreen');
@@ -606,8 +655,38 @@ async function sendCommand() {
     const previewData = await safeFetch('/api/v2/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, mode: 'preview' }),
+      body: JSON.stringify({ text, mode: 'preview', context: _selectedThreadId ? { thread_id: _selectedThreadId } : undefined }),
     });
+
+    // Email action completed (archive/delete)
+    if (previewData.status === 'email_action_complete') {
+      const r = previewData.result;
+      const icon = r.action === 'deleted' ? '🗑️' : '📬';
+      threadEntry.innerHTML = `
+        <div style="padding:16px">
+          <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Original Command</div>
+          <div style="font-size:13px;color:#94a3b8;margin-bottom:16px">"${esc(text)}"</div>
+          <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">${icon}</span>
+            <span style="font-size:14px;color:#10b981;font-weight:600">${esc(r.message)}</span>
+          </div>
+        </div>`;
+      commandHistory.push({ text, status: 'email_action_complete', command_id: previewData.command_id });
+      _selectedThreadId = null;
+      // Refresh inbox view if visible
+      const inboxView = document.querySelector('[data-view="inbox"].active');
+      if (inboxView || currentView === 'inbox') { switchView('inbox'); }
+      resetInput();
+      scrollToBottom();
+      return;
+    }
+
+    if (previewData.status === 'email_action_error') {
+      threadEntry.innerHTML = renderError(previewData.error || 'Email action failed', text);
+      commandHistory.push({ text, status: 'error', command_id: previewData.command_id });
+      resetInput();
+      return;
+    }
 
     if (previewData.status === 'needs_clarification') {
       threadEntry.innerHTML = renderClarification(previewData, text);
@@ -1501,7 +1580,7 @@ function renderInboxView(data) {
   const totalCount = data.total_count || threads.length;
   let html = `
     <div style="display:flex;align-items:baseline;gap:16px;padding:4px 0 12px 0;border-bottom:1px solid #1e293b;margin-bottom:0">
-      <span style="font-size:15px;font-weight:600;color:#fff">Important</span>
+      <span style="font-size:15px;font-weight:600;color:#fff">Inbox</span>
       <span style="font-size:13px;color:#64748b">${totalCount}</span>
     </div>`;
 
@@ -1823,6 +1902,8 @@ function formatIntent(intent) {
     'read.pipeline': 'Pipeline View',
     'read.calendar': 'Calendar View',
     'read.contact': 'Contact Lookup',
+    'email.delete': 'Delete Email',
+    'email.archive': 'Archive Email',
     'opportunity.create': 'Create Opportunity',
     'pipeline.stage_update_with_notes': 'Update Stage + Granola Notes',
     'oversight.daily_brief': 'Daily Brief',
@@ -1883,8 +1964,289 @@ function runDealCommand(company) {
   insertChip(`Show me everything on ${company}`);
 }
 
+let _selectedThreadId = null;
+let _currentThreadData = null;
+
 function runEmailCommand(threadId, from) {
-  insertChip(`Draft a reply to ${from}`);
+  _selectedThreadId = threadId;
+  openThreadDetail(threadId);
+}
+
+async function openThreadDetail(threadId) {
+  const area = document.getElementById('execArea');
+  const welcome = document.getElementById('welcomeScreen');
+  if (welcome) welcome.style.display = 'none';
+  area.style.display = 'block';
+  area.innerHTML = `<div class="thread-loading"><span class="spinner" style="width:20px;height:20px;border-width:3px"></span><div class="thread-loading-text">Loading thread...</div></div>`;
+
+  try {
+    const data = await safeFetch(`/api/v2/thread-detail?thread_id=${encodeURIComponent(threadId)}`);
+    if (!data.success) throw new Error(data.error || 'Failed to load thread');
+    _currentThreadData = data;
+    area.innerHTML = renderThreadDetail(data);
+    bindThreadKeyboard();
+  } catch (err) {
+    area.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">${esc(err.message)}</div>`;
+  }
+}
+
+function renderThreadDetail(data) {
+  const msgs = data.messages || [];
+  const crm = data.crm;
+  const reply = data.recommended_reply;
+  const lastMsg = msgs[msgs.length - 1];
+  const participantCount = (data.participants || []).length;
+
+  let html = `<div class="thread-detail">`;
+
+  // Back button
+  html += `<div class="thread-back" onclick="switchView('inbox')">&#8592; Back to Inbox</div>`;
+
+  // Subject line
+  html += `<div class="thread-subject">${esc(data.subject || '(no subject)')}</div>`;
+  html += `<div class="thread-meta">`;
+  html += `<span>${msgs.length} message${msgs.length > 1 ? 's' : ''}</span>`;
+  if (participantCount > 0) html += `<span>&middot; ${participantCount} external participant${participantCount > 1 ? 's' : ''}</span>`;
+  if (crm?.deals?.length) html += `<span class="crm-deal-chip">${esc(crm.deals[0].name)} &middot; ${esc(crm.deals[0].stage || '')}</span>`;
+  html += `</div>`;
+
+  // Action buttons bar
+  html += `<div class="thread-actions-bar">`;
+  html += `<button class="thread-action-btn primary" onclick="threadReply()">&#9993; Reply <kbd>R</kbd></button>`;
+  html += `<button class="thread-action-btn green" onclick="threadArchive()">&#10003; Archive <kbd>E</kbd></button>`;
+  html += `<button class="thread-action-btn danger" onclick="threadDelete()">&#128465; Delete <kbd>#</kbd></button>`;
+  if (crm) {
+    html += `<button class="thread-action-btn" onclick="threadUpdateCRM()">&#9889; Update CRM</button>`;
+  }
+  html += `<button class="thread-action-btn" onclick="window.open('https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(data.thread_id)}','_blank')">&#128279; Open in Gmail</button>`;
+  html += `</div>`;
+
+  // CRM context bar
+  if (crm) {
+    const initials = crm.name ? crm.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
+    html += `<div class="thread-crm-bar">`;
+    html += `<div class="crm-avatar">${initials}</div>`;
+    html += `<div class="crm-info">`;
+    html += `<div class="crm-name">${esc(crm.name || crm.email)}</div>`;
+    html += `<div class="crm-detail">${esc(crm.title || '')}${crm.company ? ` at ${esc(crm.company)}` : ''}${crm.phone ? ` &middot; ${esc(crm.phone)}` : ''}</div>`;
+    html += `</div>`;
+    if (crm.deals?.length) {
+      crm.deals.forEach(d => {
+        html += `<span class="crm-deal-chip" style="cursor:pointer" onclick="window.open('https://app.hubspot.com/contacts/21506140/record/0-3/${d.id}','_blank')">${esc(d.name)}${d.amount ? ` &middot; $${Number(d.amount).toLocaleString()}` : ''}</span>`;
+      });
+    }
+    html += `</div>`;
+  }
+
+  // Messages
+  msgs.forEach((msg, i) => {
+    const isLast = i === msgs.length - 1;
+    const fromName = parseEmailName(msg.from);
+    const fromInitials = fromName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const toShort = parseEmailName(msg.to);
+    const dateStr = formatMsgDate(msg.timestamp || msg.date);
+
+    html += `<div class="thread-message ${isLast ? 'expanded' : 'collapsed'}" id="msg-${msg.id}">`;
+    html += `<div class="msg-header" onclick="toggleMsg('${msg.id}')">`;
+    html += `<div class="msg-avatar" style="${msg.is_draft ? 'background:rgba(239,68,68,0.2);color:#ef4444' : ''}">${msg.is_draft ? 'D' : fromInitials}</div>`;
+    html += `<div style="flex:1;min-width:0;">`;
+    html += `<div style="display:flex;align-items:center;gap:6px;">`;
+    html += `<span class="msg-sender">${msg.is_draft ? '<span style="color:#ef4444">Draft</span>' : esc(fromName)}</span>`;
+    html += `<span class="msg-to">to ${esc(toShort)}${msg.cc ? ', +cc' : ''}</span>`;
+    html += `</div>`;
+    if (!isLast) html += `<div class="msg-snippet">${esc(msg.snippet || '')}</div>`;
+    html += `</div>`;
+    html += `<span class="msg-date">${dateStr}</span>`;
+    html += `</div>`;
+    html += `<div class="msg-body">${escBody(msg.body_text || msg.snippet || '')}</div>`;
+    html += `</div>`;
+  });
+
+  // AI Recommended Reply
+  if (reply) {
+    html += `<div class="thread-reply-box" id="replyBox">`;
+    html += `<div class="reply-label">&#10024; AI Recommended Reply</div>`;
+    html += `<div class="reply-body" id="replyPreview">${escBody(reply.body)}</div>`;
+    html += `<div class="reply-actions">`;
+    html += `<button class="thread-action-btn primary" onclick="sendReplyAsDraft()">Create Draft</button>`;
+    html += `<button class="thread-action-btn" onclick="editReply()">Edit</button>`;
+    html += `<button class="thread-action-btn" onclick="regenerateReply()">Regenerate</button>`;
+    html += `</div>`;
+    html += `</div>`;
+  } else {
+    html += `<div class="thread-reply-box">`;
+    html += `<div class="reply-label" style="color:#64748b;">No reply needed</div>`;
+    html += `<div style="font-size:12px;color:#475569;margin-bottom:8px;">This email doesn't appear to need a response.</div>`;
+    html += `<button class="thread-action-btn" onclick="threadReply()">Reply Anyway</button>`;
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+function toggleMsg(msgId) {
+  const el = document.getElementById('msg-' + msgId);
+  if (!el) return;
+  el.classList.toggle('expanded');
+  el.classList.toggle('collapsed');
+}
+
+function parseEmailName(raw) {
+  if (!raw) return 'Unknown';
+  const match = raw.match(/^([^<]+)/);
+  return match ? match[1].trim().replace(/"/g, '') : raw.replace(/<[^>]+>/, '').trim() || 'Unknown';
+}
+
+function formatMsgDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function escBody(text) {
+  // Escape HTML but preserve line breaks and linkify URLs
+  let s = esc(text);
+  s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+
+// ── Thread Actions ──
+
+async function threadArchive() {
+  if (!_currentThreadData) return;
+  try {
+    await safeFetch('/api/v2/thread-detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: _currentThreadData.thread_id, action: 'archive' }),
+    });
+    showToast('Archived');
+    switchView('inbox');
+  } catch (err) {
+    showToast('Archive failed: ' + err.message);
+  }
+}
+
+async function threadDelete() {
+  if (!_currentThreadData) return;
+  try {
+    await safeFetch('/api/v2/thread-detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ thread_id: _currentThreadData.thread_id, action: 'delete' }),
+    });
+    showToast('Moved to trash');
+    switchView('inbox');
+  } catch (err) {
+    showToast('Delete failed: ' + err.message);
+  }
+}
+
+function threadReply() {
+  if (!_currentThreadData) return;
+  const lastMsg = _currentThreadData.messages[_currentThreadData.messages.length - 1];
+  const from = parseEmailName(lastMsg.from);
+  // Pre-fill command bar and focus
+  const input = document.getElementById('cmdInput');
+  input.value = `Draft a reply to ${from}`;
+  input.focus();
+  _selectedThreadId = _currentThreadData.thread_id;
+}
+
+function threadUpdateCRM() {
+  if (!_currentThreadData?.crm?.deals?.length) return;
+  const dealName = _currentThreadData.crm.deals[0].name;
+  const input = document.getElementById('cmdInput');
+  input.value = `Update ${dealName} in HubSpot`;
+  input.focus();
+}
+
+async function sendReplyAsDraft() {
+  if (!_currentThreadData?.recommended_reply) return;
+  const reply = _currentThreadData.recommended_reply;
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  try {
+    const editArea = document.getElementById('replyEditArea');
+    const bodyText = editArea ? editArea.value : reply.body;
+    const result = await safeFetch('/api/v2/thread-detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        thread_id: _currentThreadData.thread_id,
+        action: 'draft',
+        to: reply.to,
+        subject: reply.subject,
+        body: bodyText,
+      }),
+    });
+    if (result.success) {
+      showToast('Draft created in Gmail');
+      btn.textContent = '✓ Draft Created';
+      btn.style.background = 'rgba(16,185,129,0.2)';
+      btn.style.color = '#10b981';
+      if (result.url) {
+        setTimeout(() => window.open(result.url, '_blank'), 500);
+      }
+    } else {
+      throw new Error(result.error || 'Failed');
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Create Draft';
+    showToast('Failed: ' + err.message);
+  }
+}
+
+function editReply() {
+  if (!_currentThreadData?.recommended_reply) return;
+  const box = document.getElementById('replyBox');
+  const preview = document.getElementById('replyPreview');
+  if (!box || !preview) return;
+  // Replace preview with editable textarea
+  const text = _currentThreadData.recommended_reply.body;
+  preview.outerHTML = `<textarea class="reply-edit-area" id="replyEditArea">${esc(text)}</textarea>`;
+  const area = document.getElementById('replyEditArea');
+  if (area) { area.focus(); area.selectionStart = area.value.length; }
+}
+
+async function regenerateReply() {
+  if (!_currentThreadData) return;
+  showToast('Regenerating...');
+  await openThreadDetail(_currentThreadData.thread_id);
+}
+
+// ── Keyboard shortcuts (Superhuman-style) ──
+let _threadKeyHandler = null;
+
+function bindThreadKeyboard() {
+  if (_threadKeyHandler) document.removeEventListener('keydown', _threadKeyHandler);
+  _threadKeyHandler = function(e) {
+    // Don't fire if typing in input/textarea
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (!_currentThreadData) return;
+
+    if (e.key === 'e' || e.key === 'E') { e.preventDefault(); threadArchive(); }
+    else if (e.key === '#') { e.preventDefault(); threadDelete(); }
+    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); threadReply(); }
+    else if (e.key === 'Escape') { e.preventDefault(); switchView('inbox'); }
+  };
+  document.addEventListener('keydown', _threadKeyHandler);
+}
+
+function unbindThreadKeyboard() {
+  if (_threadKeyHandler) { document.removeEventListener('keydown', _threadKeyHandler); _threadKeyHandler = null; }
+  _currentThreadData = null;
+  _selectedThreadId = null;
 }
 
 function copyArtifact(btn) {

@@ -109,6 +109,8 @@ READ verbs: show, pull up, find, open, get, look up, what is, what are, latest, 
 
 === LAYER 3: WORKFLOW (mutating systems) ===
 - postcall.full — "I just finished my call with X" (full post-call automation)
+- email.delete — "delete this email", "trash it", "trash this", "get rid of this email". Moves email to Gmail trash.
+- email.archive — "archive this email", "archive it", "dismiss this". Removes email from inbox.
 - email.draft — "draft a follow-up", "draft email to X"
 - proposal.create — "create proposal for X"
 - scheduling.request — "loop in Jackson", "schedule", "find a time", "book a meeting"
@@ -290,6 +292,16 @@ function fallbackInterpret(commandId: string, text: string): CommandIntent {
   }
 
   // ── LAYER 3: WORKFLOW (mutating systems) ────────────────────────
+  // Delete email
+  else if (lower.match(/\b(delete|trash|destroy|get rid of|throw away)\b/) && (lower.includes('email') || lower.includes('thread') || lower.match(/\b(it|this|that)\b/))) {
+    intent = 'email.delete';
+    actions = ['gmail.trash_thread'];
+  }
+  // Archive email
+  else if (lower.match(/\b(archive|dismiss)\b/) && (lower.includes('email') || lower.includes('thread') || lower.match(/\b(it|this|that)\b/))) {
+    intent = 'email.archive';
+    actions = ['gmail.archive_thread'];
+  }
   // Post-call
   else if (lower.includes('just finished') || lower.includes('post-call') || lower.includes('postcall')) {
     intent = 'postcall.full';

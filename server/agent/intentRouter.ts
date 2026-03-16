@@ -169,6 +169,18 @@ const MATCHERS: Matcher[] = [
   },
   {
     top_level: 'workflow_mutation',
+    sub_intent: 'email.delete',
+    test: (l) => /\b(delete|trash|destroy|get rid of|throw away)\b/.test(l) && (/\bemail\b/.test(l) || /\bthread\b/.test(l) || /\bit\b/.test(l) || /\bthis\b/.test(l) || /\bthat\b/.test(l)),
+    confidence: 0.85,
+  },
+  {
+    top_level: 'workflow_mutation',
+    sub_intent: 'email.archive',
+    test: (l) => /\b(archive|dismiss|remove from inbox)\b/.test(l) && (/\bemail\b/.test(l) || /\bthread\b/.test(l) || /\bit\b/.test(l) || /\bthis\b/.test(l) || /\bthat\b/.test(l)),
+    confidence: 0.85,
+  },
+  {
+    top_level: 'workflow_mutation',
     sub_intent: 'email.draft',
     test: (l) => /\bdraft\b/.test(l) && (/\bemail\b/.test(l) || /\bfollow/.test(l) || /\breply\b/.test(l)),
     confidence: 0.8,

@@ -34,6 +34,11 @@ const DESTRUCTIVE_INTENTS = new Set([
   'pipeline.stage_update_with_notes',
 ]);
 
+const EMAIL_ACTION_INTENTS = new Set([
+  'email.delete',
+  'email.archive',
+]);
+
 const WIZARD_INTENTS = new Set([
   'opportunity.create',
 ]);
@@ -293,6 +298,110 @@ export default safeHandler('command', async (req, res) => {
         existing_contacts: existingContacts,
       },
     });
+  }
+
+  // Step 1.5-E: Email actions (archive/delete) — execute directly via Gmail API
+  if (EMAIL_ACTION_INTENTS.has(intent.intent)) {
+    const threadId = intent.parameters?.thread_id
+      || intent.entities.find((e: any) => e.entity_type === 'thread')?.resolved_id
+      || context?.thread_id;
+
+    if (!threadId) {
+      return res.status(200).json({
+        success: true,
+        status: 'needs_clarification',
+        command_id: intent.command_id,
+        raw_text: text,
+        intent,
+        clarifications: [{
+          id: generateId('clar'),
+          question: 'Which email should I ' + (intent.intent === 'email.delete' ? 'delete' : 'archive') + '? Please select an email first.',
+          type: 'freeform',
+          options: [],
+          required: true,
+        }],
+      });
+    }
+
+    try {
+      const googleAccessToken = await getGmailToken();
+
+      if (intent.intent === 'email.delete') {
+        // Trash the thread
+        const trashRes = await fetch(`${GMAIL_BASE}/threads/${threadId}/trash`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${googleAccessToken}` },
+        });
+        if (!trashRes.ok) {
+          const err = await trashRes.text();
+          throw new Error(`Gmail trash failed: ${err}`);
+        }
+      } else {
+        // Archive: remove INBOX label
+        const archiveRes = await fetch(`${GMAIL_BASE}/threads/${threadId}/modify`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${googleAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ removeLabelIds: ['INBOX'] }),
+        });
+        if (!archiveRes.ok) {
+          const err = await archiveRes.text();
+          throw new Error(`Gmail archive failed: ${err}`);
+        }
+      }
+
+      const actionLabel = intent.intent === 'email.delete' ? 'deleted' : 'archived';
+
+      await appendEvent({
+        event_type: `agent.email.${actionLabel}`,
+        source: 'agent',
+        correlation_id: intent.command_id,
+        actor: 'agent',
+        timestamp: new Date().toISOString(),
+        payload: { thread_id: threadId, action: actionLabel },
+        metadata: { version: 1, environment: process.env.VERCEL_ENV || 'development', command_id: intent.command_id },
+      });
+
+      return res.status(200).json({
+        success: true,
+        status: 'email_action_complete',
+        command_id: intent.command_id,
+        raw_text: text,
+        intent: {
+          raw_text: text,
+          intent: intent.intent,
+          confidence: intent.confidence,
+          entities: intent.entities,
+          mode: 'execute',
+          parameters: intent.parameters,
+        },
+        result: {
+          action: actionLabel,
+          thread_id: threadId,
+          message: `Email ${actionLabel} successfully.`,
+        },
+      });
+    } catch (err: any) {
+      await captureFailure({
+        error_type: 'api_error',
+        error_message: `/api/v2/command:email_action: ${err.message || 'Unknown'}`,
+        stack: err.stack,
+        severity: 'medium',
+        command_id: intent.command_id,
+        intent: intent.intent,
+        entity_snapshot: intent.entities,
+        reproducible_input: { raw_text: text, context },
+      }).catch(() => {});
+      return res.status(200).json({
+        success: false,
+        status: 'email_action_error',
+        command_id: intent.command_id,
+        raw_text: text,
+        error: err.message || 'Failed to perform email action',
+      });
+    }
   }
 
   // Step 1.5b: Entity validation for destructive actions
